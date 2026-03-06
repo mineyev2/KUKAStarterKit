@@ -1244,10 +1244,11 @@ def main(use_hardware: bool) -> None:
     # Waypoint Generation Setup
     # ==================================================================
     hemisphere_pos = np.array([0.5, 0.0, 0.255])
-    hemisphere_radius = 0.115
+    hemisphere_radius = 0.105
     hemisphere_axis = np.array([0, 0, 1])
     coverage = 0.10  # Fraction of hemisphere to cover
-    distance_along_optical_axis = 0.04
+    distance_along_optical_axis = 0.03
+    num_pictures = 30
     elbow_angle = np.pi / 2 + np.deg2rad(45)
 
     T_tip_to_camera = np.eye(4)
@@ -1336,18 +1337,6 @@ def main(use_hardware: bool) -> None:
         name="camera_link",
     )
 
-    # microscope_tip_frame = station.get_internal_plant().GetFrameByName(
-    #     "microscope_tip_link"
-    # )
-    # AddFrameTriadIllustration(
-    #     scene_graph=station.internal_station.get_scene_graph(),
-    #     plant=station.get_internal_plant(),
-    #     frame=microscope_tip_frame,
-    #     length=0.1,
-    #     radius=0.002,
-    #     name="microscope_tip_link",
-    # )
-
     # Build diagram
     diagram = builder.Build()
 
@@ -1409,18 +1398,16 @@ def main(use_hardware: bool) -> None:
     }
 
     # ---------------------------------------------------------------
-    # Camera + background thread setup
+    # Camera + two background threads
     #
-    # Architecture (zero camera calls on the main loop critical path):
+    # _capture_thread  ←  owns camera.read() loop at camera's native rate.
+    #                      Always stores the latest frame in _latest_frame.
+    #                      Main loop NEVER calls camera.read().
     #
-    #   _capture_thread  ←  owns camera.read() loop at camera's native rate
-    #           |  enqueues (frame, path) when _recording is set
-    #           ↓
-    #       _frame_queue
-    #           ↓
-    #   _writer_thread   ←  cv2.imwrite() calls, fully off critical path
+    # _writer_thread   ←  owns cv2.imwrite(); pulls from _frame_queue.
     #
-    # The main loop only calls _recording.set() / _recording.clear().
+    # At each pause the main loop just snapshots _latest_frame (a lock
+    # grab, ~microseconds) and enqueues it → zero blocking on critical path.
     # ---------------------------------------------------------------
     camera = cv2.VideoCapture(4)
     camera.set(cv2.CAP_PROP_FPS, 30)
@@ -1433,32 +1420,23 @@ def main(use_hardware: bool) -> None:
             )
         )
 
-    # Shared state written by main loop BEFORE _recording.set(); read by capture thread.
-    _capture_state = {
-        "frame_dir": None,  # Path  – current scan output folder
-        "frame_idx": 0,  # int   – frame counter for this scan
-    }
-    _recording = threading.Event()  # set = capture & enqueue; cleared = discard
-    _capture_stop = threading.Event()  # set = capture thread should exit
-
+    _latest_frame = None  # most recent frame from camera
+    _latest_frame_lock = threading.Lock()  # guards _latest_frame
+    _capture_stop = threading.Event()  # set → capture thread exits
     _frame_queue: queue.Queue = queue.Queue(maxsize=0)  # unbounded
 
     def _capture_loop():
-        """Runs in background; owns the camera entirely.
-        Enqueues (frame, path_str) whenever _recording is set.
-        Discards frames when _recording is cleared (keeps camera buffer drained).
+        """Runs in background; owns camera.read() entirely.
+        Continuously updates _latest_frame so the main loop always has
+        a fresh frame available without ever blocking on camera.read().
+        Also keeps the camera driver buffer drained between pauses.
         """
+        nonlocal _latest_frame
         while not _capture_stop.is_set():
-            ret, frame = camera.read()  # blocks until next frame at camera rate
-            if not ret:
-                continue
-            if _recording.is_set() and _capture_state["frame_dir"] is not None:
-                path = str(
-                    _capture_state["frame_dir"]
-                    / f"frame_{_capture_state['frame_idx']:05d}.jpg"
-                )
-                _frame_queue.put((frame, path))
-                _capture_state["frame_idx"] += 1
+            ret, frame = camera.read()  # blocks at camera rate (~33 ms/frame)
+            if ret:
+                with _latest_frame_lock:
+                    _latest_frame = frame  # overwrite; only the latest matters
 
     def _writer_loop():
         """Handles all cv2.imwrite() calls off the critical path."""
@@ -1476,9 +1454,17 @@ def main(use_hardware: bool) -> None:
     _capture_thread.start()
     _writer_thread.start()
 
-    # Per-scan metadata (frame dir / halfway time tracked here; frame_idx lives in _capture_state)
+    # Per-scan metadata
     scan_frame_dir = None  # Path to current scan's frame folder
     optical_halfway_time = None  # traj_time at which inward pass ends
+
+    # Per-scan stop-and-shoot state (initialised in COMPUTING_IKS)
+    capture_traj_times: np.ndarray = np.array([])  # traj_times at each photo stop
+    next_capture_idx: int = 0  # which stop we're waiting to reach
+    scan_frame_idx: int = 0  # frame counter within the scan
+    is_pausing_for_capture: bool = False
+    pause_start_sim_time: float = 0.0
+    hold_traj_time: float = 0.0  # trajectory time to hold at during pause
 
     while station.internal_meshcat.GetButtonClicks("Stop Simulation") < 1:
         if state != prev_state:
@@ -1513,12 +1499,12 @@ def main(use_hardware: bool) -> None:
                 )
                 q_des = kinematics_solver.find_closest_solution(Q, q_curr)
 
-                print(
-                    colored(
-                        f"Goal joint configuration for Start: {np.rad2deg(q_des)}",
-                        "yellow",
-                    )
-                )
+                # print(
+                #     colored(
+                #         f"Goal joint configuration for Start: {np.rad2deg(q_des)}",
+                #         "yellow",
+                #     )
+                # )
 
                 trajectory = create_traj_from_q1_to_q2(
                     station,
@@ -1634,7 +1620,7 @@ def main(use_hardware: bool) -> None:
                 # ----------------------------------------------------------
                 # Compute the halfway point of the optical axis trajectory
                 # (the trajectory is mirrored: first half goes inward, second
-                # half goes outward).  We only capture frames during the first half.
+                # half goes outward). Photos are taken only on the inward pass.
                 # ----------------------------------------------------------
                 optical_halfway_time = optical_axis_trajectory.end_time() / 2.0
 
@@ -1642,14 +1628,29 @@ def main(use_hardware: bool) -> None:
                 scans_base = Path(__file__).parent.parent / "outputs" / "scans"
                 scan_frame_dir = scans_base / f"scan{scan_idx:02d}"
                 scan_frame_dir.mkdir(parents=True, exist_ok=True)
-                midpoint_pose_saved = False  # reset for this scan
+                midpoint_pose_saved = False
                 print(colored(f"✓ Frame output dir: {scan_frame_dir}", "cyan"))
 
-                # Wire up capture state BEFORE setting _recording so the
-                # capture thread always sees a valid directory and counter.
-                _capture_state["frame_dir"] = scan_frame_dir
-                _capture_state["frame_idx"] = 0
-                _recording.set()  # ← capture thread starts saving frames now
+                # ----------------------------------------------------------
+                # Build the stop-and-shoot schedule.
+                # num_pictures evenly-spaced stops on [0, optical_halfway_time];
+                # both endpoints (t=0 = start, t=halfway = deepest point) included.
+                # ----------------------------------------------------------
+                capture_traj_times = np.linspace(
+                    0.0, optical_halfway_time, num_pictures
+                )
+                next_capture_idx = 0
+                scan_frame_idx = 0
+                is_pausing_for_capture = False
+                pause_start_sim_time = 0.0
+                hold_traj_time = 0.0
+                print(
+                    colored(
+                        f"✓ Stop-and-shoot: {num_pictures} stops at "
+                        f"{np.round(capture_traj_times, 2).tolist()}",
+                        "cyan",
+                    )
+                )
 
                 scan_idx += 1
 
@@ -1695,7 +1696,50 @@ def main(use_hardware: bool) -> None:
             current_time = simulator.get_context().get_time()
             traj_time = current_time - trajectory_start_time
 
-            if traj_time <= optical_axis_trajectory.end_time():
+            if is_pausing_for_capture:
+                # -------------------------------------------------------
+                # PAUSED: hold robot at stop position while timer runs.
+                # After 0.5 s: flush camera buffer, take one still, queue
+                # it for async write, compensate trajectory_start_time.
+                # -------------------------------------------------------
+                q_desired = optical_axis_trajectory.value(hold_traj_time)
+                station_context = station.GetMyMutableContextFromRoot(
+                    simulator.get_mutable_context()
+                )
+                station.GetInputPort("iiwa.position").FixValue(
+                    station_context, q_desired
+                )
+
+                elapsed_pause = current_time - pause_start_sim_time
+                if elapsed_pause >= 0.5:
+                    # Grab the latest frame the capture thread has buffered.
+                    # This is a lock snapshot (~microseconds) – no blocking read.
+                    with _latest_frame_lock:
+                        frame = (
+                            _latest_frame.copy() if _latest_frame is not None else None
+                        )
+                    if frame is not None and scan_frame_dir is not None:
+                        frame_path = str(
+                            scan_frame_dir / f"frame_{scan_frame_idx:05d}.jpg"
+                        )
+                        _frame_queue.put((frame, frame_path))
+                        scan_frame_idx += 1
+                        print(
+                            colored(
+                                f"  📷 Photo {scan_frame_idx}/{num_pictures} "
+                                f"at traj_t={hold_traj_time:.3f}s "
+                                f"→ frame_{scan_frame_idx-1:05d}.jpg",
+                                "cyan",
+                            )
+                        )
+
+                    # Shift trajectory_start_time so the robot resumes
+                    # from exactly the point it paused at.
+                    trajectory_start_time += elapsed_pause
+                    next_capture_idx += 1
+                    is_pausing_for_capture = False
+
+            elif traj_time <= optical_axis_trajectory.end_time():
                 q_desired = optical_axis_trajectory.value(traj_time)
                 station_context = station.GetMyMutableContextFromRoot(
                     simulator.get_mutable_context()
@@ -1705,23 +1749,33 @@ def main(use_hardware: bool) -> None:
                 )
 
                 # -----------------------------------------------------------
-                # Stop frame capture once the inward pass is complete.
-                # The capture thread does the actual camera.read() + enqueue;
-                # clearing the event is all the main loop needs to do.
+                # Check whether we've reached the next photo stop.
+                # All stops are on the inward pass [0, optical_halfway_time].
                 # -----------------------------------------------------------
-                if traj_time > optical_halfway_time:
-                    _recording.clear()
+                if (
+                    next_capture_idx < len(capture_traj_times)
+                    and traj_time >= capture_traj_times[next_capture_idx]
+                ):
+                    hold_traj_time = capture_traj_times[next_capture_idx]
+                    pause_start_sim_time = current_time
+                    is_pausing_for_capture = True
+                    print(
+                        colored(
+                            f"  ⏸ Pausing at stop {next_capture_idx + 1}/{num_pictures} "
+                            f"(traj_t={hold_traj_time:.3f}s)",
+                            "yellow",
+                        )
+                    )
 
                 # -----------------------------------------------------------
-                # Save the microscope_tip_link pose at the midpoint of the
-                # inward pass (= 1/4 of the total optical axis trajectory).
-                # We capture this exactly once per scan (first crossing).
+                # Save camera_link pose at the deepest inward point
+                # (= optical_halfway_time, the last capture stop).
+                # Saved once per scan on first crossing.
                 # -----------------------------------------------------------
-                optical_midpoint_time = optical_halfway_time / 2.0  # 1/4 of total traj
                 if (
                     not midpoint_pose_saved
                     and scan_frame_dir is not None
-                    and traj_time >= optical_midpoint_time
+                    and traj_time >= optical_halfway_time
                 ):
                     internal_plant = station.get_internal_plant()
                     internal_plant_context = station.get_internal_plant_context()
@@ -1731,18 +1785,18 @@ def main(use_hardware: bool) -> None:
                     pose_matrix = (
                         camera_pose.GetAsMatrix4()
                     )  # 4x4 homogeneous transform
-
                     pose_path = scan_frame_dir / "pose.npy"
                     np.save(str(pose_path), pose_matrix)
                     midpoint_pose_saved = True
                     print(
                         colored(
-                            f"✓ Saved microscope_tip_link pose at t={traj_time:.3f}s → {pose_path}",
+                            f"✓ Saved camera_link pose at deepest point "
+                            f"t={traj_time:.3f}s → {pose_path}",
                             "cyan",
                         )
                     )
 
-            elif traj_time <= hemisphere_trajectory.end_time() + 1:  # Wait for 1 second
+            elif traj_time <= optical_axis_trajectory.end_time() + 1:  # 1 s buffer
                 pass
             else:
                 print(colored("✓ Optical axis trajectory execution complete!", "green"))
@@ -1815,10 +1869,9 @@ def main(use_hardware: bool) -> None:
     for i in range(7):
         station.internal_meshcat.DeleteSlider(f"Joint {i+1} (deg)")
 
-    # Shut down background threads cleanly:
-    # 1. Stop the capture thread (it will exit its loop on next camera.read() return)
+    # Shut down background threads cleanly.
+    # 1. Stop the capture thread (exits on next camera.read() return)
     _capture_stop.set()
-    _recording.clear()  # ensure capture thread drains without enqueuing
     _capture_thread.join(timeout=5)
     camera.release()
     # 2. Drain and stop the writer thread

@@ -1804,7 +1804,7 @@ def main(use_hardware: bool) -> None:
                 f"Joint {i+1} (deg)", np.rad2deg(q_current[i])
             )
 
-        simulator.AdvanceTo(simulator.get_context().get_time() + 0.01)
+        simulator.AdvanceTo(simulator.get_context().get_time() + 0.005)
 
     station.internal_meshcat.DeleteButton("Stop Simulation")
     station.internal_meshcat.DeleteButton("Plan Move to Start")
