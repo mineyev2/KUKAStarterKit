@@ -26,21 +26,21 @@ def draw_sphere(meshcat, name, position, radius=0.01):
 
 
 # TODO: These are collisions as well so maybe don't just add into visualizations.py?
-def draw_triad(meshcat, name, transform, length=0.1, radius=0.005):
+def draw_triad(meshcat, name, transform, length=0.1, radius=0.005, opacity=1.0):
     """Draws a coordinate frame triad in Meshcat at the given RigidTransform."""
-    meshcat.SetObject(f"{name}/x", Cylinder(radius, length), Rgba(1, 0, 0, 1))
+    meshcat.SetObject(f"{name}/x", Cylinder(radius, length), Rgba(1, 0, 0, opacity))
     meshcat.SetTransform(
         f"{name}/x",
         RigidTransform(RotationMatrix.MakeYRotation(np.pi / 2), [length / 2, 0, 0]),
     )
 
-    meshcat.SetObject(f"{name}/y", Cylinder(radius, length), Rgba(0, 1, 0, 1))
+    meshcat.SetObject(f"{name}/y", Cylinder(radius, length), Rgba(0, 1, 0, opacity))
     meshcat.SetTransform(
         f"{name}/y",
         RigidTransform(RotationMatrix.MakeXRotation(np.pi / 2), [0, length / 2, 0]),
     )
 
-    meshcat.SetObject(f"{name}/z", Cylinder(radius, length), Rgba(0, 0, 1, 1))
+    meshcat.SetObject(f"{name}/z", Cylinder(radius, length), Rgba(0, 0, 1, opacity))
     meshcat.SetTransform(f"{name}/z", RigidTransform([0, 0, length / 2]))
 
     # Set the overall frame transform

@@ -188,8 +188,9 @@ class InternalStationDiagram(Diagram):
     def __init__(
         self,
         scenario: Scenario,
-        hemisphere_pos: np.ndarray = None,
-        hemisphere_radius: float = None,
+        hemisphere_dist,
+        hemisphere_angle,
+        hemisphere_radius,
         package_xmls: List[str] = [],
     ):
         super().__init__()
@@ -214,13 +215,26 @@ class InternalStationDiagram(Diagram):
         )
 
         # Add other world geometry (e.g., floor, wall, etc.)
-        self.hemisphere_pos = hemisphere_pos
+        self.hemisphere_dist = hemisphere_dist
+        self.hemisphere_angle = hemisphere_angle
         self.hemisphere_radius = hemisphere_radius
+        self.hemisphere_pos = np.array(
+            [
+                hemisphere_dist * np.cos(hemisphere_angle),
+                hemisphere_dist * np.sin(hemisphere_angle),
+                0.36,
+            ]
+        )
+
         add_floor(self._plant)
         add_wall(self._plant)
+
+        hemisphere_wall_rot = RotationMatrix.MakeZRotation(self.hemisphere_angle)
         add_wall(
             self._plant,
-            X_WF=RigidTransform(self.hemisphere_pos + np.array([0.005, 0, 0.0])),
+            X_WF=RigidTransform(
+                hemisphere_wall_rot, self.hemisphere_pos + np.array([0.0, 0.005, 0.0])
+            ),
         )
 
         add_sphere(  # scanning sphere for visualization
@@ -306,7 +320,9 @@ class InternalStationDiagram(Diagram):
         add_wall(self._optimization_plant)
         add_wall(
             self._optimization_plant,
-            X_WF=RigidTransform(self.hemisphere_pos + np.array([0.005, 0, 0.0])),
+            X_WF=RigidTransform(
+                hemisphere_wall_rot, self.hemisphere_pos + np.array([0.0, 0.005, 0.0])
+            ),
         )
 
         # Add sphere to visualize scan points
@@ -438,8 +454,9 @@ class IiwaHardwareStationDiagram(Diagram):
         self,
         scenario: Scenario,
         use_hardware: bool,
-        hemisphere_pos: np.ndarray = None,
-        hemisphere_radius: float = None,
+        hemisphere_dist: float,
+        hemisphere_angle: float,
+        hemisphere_radius: float,
         control_mode: Union[IiwaControlMode, str] = IiwaControlMode.kPositionOnly,
         create_point_clouds: bool = False,
         package_xmls: List[str] = [],
@@ -457,13 +474,16 @@ class IiwaHardwareStationDiagram(Diagram):
         """
         super().__init__()
 
-        if hemisphere_pos is None:
-            hemisphere_pos = np.array([0.6666666, 0.0, 0.444444])
-        if hemisphere_radius is None:
-            hemisphere_radius = 0.05
-
-        self.hemisphere_pos = hemisphere_pos
+        self.hemisphere_dist = hemisphere_dist
+        self.hemisphere_angle = hemisphere_angle
         self.hemisphere_radius = hemisphere_radius
+        self.hemisphere_pos = np.array(
+            [
+                hemisphere_dist * np.cos(hemisphere_angle),
+                hemisphere_dist * np.sin(hemisphere_angle),
+                0.36,
+            ]
+        )
 
         self._use_hardware = use_hardware
         if isinstance(control_mode, str):
@@ -482,7 +502,8 @@ class IiwaHardwareStationDiagram(Diagram):
             InternalStationDiagram(
                 scenario=scenario,
                 package_xmls=package_xmls,
-                hemisphere_pos=self.hemisphere_pos,
+                hemisphere_dist=self.hemisphere_dist,
+                hemisphere_angle=self.hemisphere_angle,
                 hemisphere_radius=self.hemisphere_radius,
             ),
         )

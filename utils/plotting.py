@@ -172,8 +172,8 @@ def plot_hemisphere_waypoints(
     )
 
     # Add coordinate frames at all waypoints
-    frame_scale = 0.005  # Increased from 0.005 to be more visible
-    frame_linewidth = 0.5
+    frame_scale = 0.01  # Increased from 0.005 to be more visible
+    frame_linewidth = 1.0
     arrow_length_ratio = 0.1
     for wp in path_waypoints:
         pos = wp.translation()
@@ -235,25 +235,25 @@ def plot_hemisphere_waypoints(
         linewidth=0.3,
     )
 
-    # Overlay another hemisphere based on hemisphere_axis
-    if np.allclose(hemisphere_axis, [1, 0, 0]):  # x-axis hemisphere
-        u = np.linspace(-np.pi / 2, np.pi / 2, 50)
-        v = np.linspace(0, np.pi, 50)
-    elif np.allclose(hemisphere_axis, [-1, 0, 0]):
-        u = np.linspace(np.pi / 2, 3 * np.pi / 2, 50)
-        v = np.linspace(0, np.pi, 50)
-    elif np.allclose(hemisphere_axis, [0, 1, 0]):  # y-axis hemisphere
-        u = np.linspace(0, np.pi, 50)
-        v = np.linspace(0, np.pi, 50)  # Only hemisphere where x <= center_x
-    elif np.allclose(hemisphere_axis, [0, -1, 0]):
-        u = np.linspace(0, np.pi, 50)
-        v = np.linspace(-np.pi, 0, 50)  # Only hemisphere where x <= center_x
-    elif np.allclose(hemisphere_axis, [0, 0, 1]):  # z-axis hemisphere
-        u = np.linspace(0, 2 * np.pi, 50)
-        v = np.linspace(0, np.pi / 2, 25)  # Only hemisphere where z <= center_z
-    elif np.allclose(hemisphere_axis, [0, 0, -1]):
-        u = np.linspace(0, 2 * np.pi, 50)
-        v = np.linspace(np.pi / 2, np.pi, 25)  # Only hemisphere where z >= center_z
+    # # Overlay another hemisphere based on hemisphere_axis
+    # if np.allclose(hemisphere_axis, [1, 0, 0]):  # x-axis hemisphere
+    #     u = np.linspace(-np.pi / 2, np.pi / 2, 50)
+    #     v = np.linspace(0, np.pi, 50)
+    # elif np.allclose(hemisphere_axis, [-1, 0, 0]):
+    #     u = np.linspace(np.pi / 2, 3 * np.pi / 2, 50)
+    #     v = np.linspace(0, np.pi, 50)
+    # elif np.allclose(hemisphere_axis, [0, 1, 0]):  # y-axis hemisphere
+    #     u = np.linspace(0, np.pi, 50)
+    #     v = np.linspace(0, np.pi, 50)  # Only hemisphere where x <= center_x
+    # elif np.allclose(hemisphere_axis, [0, -1, 0]):
+    #     u = np.linspace(0, np.pi, 50)
+    #     v = np.linspace(-np.pi, 0, 50)  # Only hemisphere where x <= center_x
+    # elif np.allclose(hemisphere_axis, [0, 0, 1]):  # z-axis hemisphere
+    #     u = np.linspace(0, 2 * np.pi, 50)
+    #     v = np.linspace(0, np.pi / 2, 25)  # Only hemisphere where z <= center_z
+    # elif np.allclose(hemisphere_axis, [0, 0, -1]):
+    #     u = np.linspace(0, 2 * np.pi, 50)
+    #     v = np.linspace(np.pi / 2, np.pi, 25)  # Only hemisphere where z >= center_z
 
     x_sphere = hemisphere_pos[0] + hemisphere_radius * np.outer(np.cos(u), np.sin(v))
     y_sphere = hemisphere_pos[1] + hemisphere_radius * np.outer(np.sin(u), np.sin(v))

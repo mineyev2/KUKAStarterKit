@@ -102,31 +102,45 @@ def sphere_frame(p, hemisphere_axis, center):
         raise ValueError("Point cannot equal sphere center.")
     z = z / z_norm
 
-    # Global reference direction (choose something stable)
-    if np.allclose(hemisphere_axis, np.array([1, 0, 0])):
-        g = np.array([-1.0, 0.0, 0.0])
-        if np.dot(z, g) > 0.99:
-            g = np.array([0.0, 0.0, -1.0])
-        elif np.dot(z, g) < -0.99:
-            g = np.array([0.0, 0.0, 1.0])
-    elif np.allclose(hemisphere_axis, np.array([-1, 0, 0])):
+    # # Global reference direction (choose something stable)
+    # if np.allclose(hemisphere_axis, np.array([1, 0, 0])):
+    #     g = np.array([-1.0, 0.0, 0.0])
+    #     if np.dot(z, g) > 0.99:
+    #         g = np.array([0.0, 0.0, -1.0])
+    #     elif np.dot(z, g) < -0.99:
+    #         g = np.array([0.0, 0.0, 1.0])
+    # elif np.allclose(hemisphere_axis, np.array([-1, 0, 0])):
+    #     g = np.array([0.0, 0.0, 1.0])
+    #     if np.dot(z, g) > 0.99:
+    #         g = np.array([0.0, 0.0, -1.0])
+    #     elif np.dot(z, g) < -0.99:
+    #         g = np.array([0.0, 0.0, 1.0])
+    # elif np.allclose(hemisphere_axis, np.array([0, 0, 1])):
+    #     g = np.array([1.0, 0.0, 0.0])
+    #     if np.dot(z, g) > 0.99:
+    #         g = np.array([0.0, 0.0, -1.0])
+    #     elif np.dot(z, g) < -0.99:
+    #         g = np.array([0.0, 0.0, 1.0])
+    # elif np.allclose(hemisphere_axis, np.array([0, 0, -1])):  # NOTE: Haven't checked
+    #     g = np.array([1.0, 0.0, 0.0])
+    #     if np.dot(z, g) > 0.99:
+    #         g = np.array([0.0, 0.0, 1.0])
+    #     elif np.dot(z, g) < -0.99:
+    #         g = np.array([0.0, 0.0, -1.0])
+    # elif np.allclose(hemisphere_axis, np.array([0, -1, 0])):
+    #     g = np.array([0.0, 0.0, 1.0])
+    #     if np.dot(z, g) > 0.99:
+    #         g = np.array([0.0, 0.0, -1.0])
+    #     elif np.dot(z, g) < -0.99:
+    #         g = np.array([0.0, 0.0, 1.0])
+    # else:
+    #     raise ValueError("Invalid hemisphere axis.")
+
+    g = np.array([0.0, 0.0, 1.0])
+    if np.dot(z, g) > 0.99:
+        g = np.array([0.0, 0.0, -1.0])
+    elif np.dot(z, g) < -0.99:
         g = np.array([0.0, 0.0, 1.0])
-        if np.dot(z, g) > 0.99:
-            g = np.array([0.0, 0.0, -1.0])
-        elif np.dot(z, g) < -0.99:
-            g = np.array([0.0, 0.0, 1.0])
-    elif np.allclose(hemisphere_axis, np.array([0, 0, 1])):
-        g = np.array([1.0, 0.0, 0.0])
-        if np.dot(z, g) > 0.99:
-            g = np.array([0.0, 0.0, -1.0])
-        elif np.dot(z, g) < -0.99:
-            g = np.array([0.0, 0.0, 1.0])
-    elif np.allclose(hemisphere_axis, np.array([0, 0, -1])):  # NOTE: Haven't checked
-        g = np.array([1.0, 0.0, 0.0])
-        if np.dot(z, g) > 0.99:
-            g = np.array([0.0, 0.0, 1.0])
-        elif np.dot(z, g) < -0.99:
-            g = np.array([0.0, 0.0, -1.0])
 
     # Project g onto tangent plane
     x = g - np.dot(g, z) * z

@@ -139,15 +139,27 @@ def main(
     # ==================================================================
     # Parameters
     # ==================================================================
-    hemisphere_pos = np.array([0.8, 0.0, 0.36])
+    hemisphere_dist = 0.8
+    hemisphere_angle = np.deg2rad(60)
+    # hemisphere_pos = np.array([0.0, 0.8, 0.36])
+    hemisphere_pos = np.array(
+        [
+            hemisphere_dist * np.cos(hemisphere_angle),
+            hemisphere_dist * np.sin(hemisphere_angle),
+            0.36,
+        ]
+    )
     hemisphere_radius = 0.100
-    hemisphere_axis = np.array([-1, 0, 0])
+    hemisphere_axis = np.array(
+        [-np.cos(hemisphere_angle), -np.sin(hemisphere_angle), 0]
+    )
+
     num_scan_points = 50
     coverage = 0.40  # Fraction of hemisphere to cover
     distance_along_optical_axis = 0.025
     num_pictures = 30
     elbow_angle = np.deg2rad(135)
-    scan_idx = 34  # Default is 1
+    scan_idx = 1  # Default is 1
 
     vel_limits = np.full(7, 1.0)  # rad/s
     acc_limits = np.full(7, 1.0)  # rad/s^2
@@ -216,7 +228,8 @@ def main(
         "station",
         IiwaHardwareStationDiagram(
             scenario=scenario,
-            hemisphere_pos=hemisphere_pos,
+            hemisphere_dist=hemisphere_dist,
+            hemisphere_angle=hemisphere_angle,
             hemisphere_radius=hemisphere_radius,
             use_hardware=use_hardware,
         ),
@@ -232,9 +245,19 @@ def main(
     )
 
     # Create dummy constant position source (using station's default position)
-    default_position = station.get_iiwa_controller_plant().GetPositions(
-        station.get_iiwa_controller_plant().CreateDefaultContext()
-    )
+    # default_position = station.get_iiwa_controller_plant().GetPositions(
+    #     station.get_iiwa_controller_plant().CreateDefaultContext()
+    # )
+
+    # iiwa_joint_1: [0]
+    # iiwa_joint_2: [0.1]
+    # iiwa_joint_3: [0]
+    # iiwa_joint_4: [-1.2]
+    # iiwa_joint_5: [0]
+    # iiwa_joint_6: [1.6]
+    # iiwa_joint_7: [0]
+
+    default_position = np.array([1.57079, 0.1, 0, -1.2, 0, 1.6, 0])
     dummy = builder.AddSystem(ConstantVectorSource(default_position))
     builder.Connect(
         dummy.get_output_port(),
@@ -410,6 +433,26 @@ def main(
     else:
         print(colored("✓ Camera disabled via --no_cam", "yellow"))
 
+        # visualize all hemisphere waypoints
+        T_cam_to_tip = np.array(
+            [
+                [0, -1, 0],
+                [-1, 0, 0],
+                [0, 0, -1],
+            ]
+        )
+        T_cam_to_tip = RotationMatrix(T_cam_to_tip)
+        T_cam_to_tip = RigidTransform(T_cam_to_tip)
+    for i, wp in enumerate(hemisphere_waypoints):
+        draw_triad(
+            station.internal_meshcat,
+            f"hemisphere_waypoint_{i}",
+            wp @ T_cam_to_tip,
+            length=0.02,
+            radius=0.001,
+            opacity=0.5,
+        )
+
     # Per-scan metadata
     scan_frame_dir = None  # Path to current scan's frame folder
     optical_halfway_time = None  # traj_time at which inward pass ends
@@ -572,16 +615,7 @@ def main(
             pose_target = hemisphere_waypoints[scan_idx]
 
             # # Visualize the target scan point as a triad for reference
-            offset = np.array(
-                [
-                    [0, -1, 0],
-                    [-1, 0, 0],
-                    [0, 0, -1],
-                ]
-            )
-            offset = RotationMatrix(offset)
-            offset = RigidTransform(offset)
-            pose_target = pose_target @ offset
+            pose_target = pose_target @ T_cam_to_tip
 
             draw_triad(
                 station.internal_meshcat,
