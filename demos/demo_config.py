@@ -7,8 +7,8 @@ HARDWARE_CONFIG = {
 }
 
 SIMULATION_CONFIG = {
-    "speed_factor": 3.0,
-    "max_joint_velocity_deg": 3000.0,
+    "speed_factor": 5.0,
+    "max_joint_velocity_deg": 1000.0,
 }
 
 

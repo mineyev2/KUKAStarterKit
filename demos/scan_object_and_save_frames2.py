@@ -28,6 +28,7 @@ from pydrake.all import (
     ConstantVectorSource,
     DiagramBuilder,
     FrameIndex,
+    GraphOfConvexSetsOptions,
     LogVectorOutput,
     MeshcatVisualizer,
     PiecewisePolynomial,
@@ -35,6 +36,7 @@ from pydrake.all import (
     RigidTransform,
     RotationMatrix,
     Simulator,
+    SnoptSolver,
     Solve,
 )
 from termcolor import colored
@@ -43,10 +45,13 @@ from iiwa_setup.iiwa import IiwaForwardKinematics, IiwaHardwareStationDiagram
 from iiwa_setup.util.traj_planning import (
     add_collision_constraints_to_trajectory,
     create_traj_from_q1_to_q2,
+    resolve_gcs_with_toppra,
     resolve_with_toppra,
     setup_trajectory_optimization_from_q1_to_q2,
+    setup_trajectory_optimization_from_q1_to_q2_without_collision_constraints,
 )
 from iiwa_setup.util.visualizations import draw_triad
+from utils.iris import compute_iris_regions
 from utils.kuka_geo_kin import KinematicsSolver
 from utils.planning import (
     compute_hemisphere_traj_async,
@@ -57,6 +62,10 @@ from utils.planning import (
     generate_poses_along_hemisphere,
     generate_waypoints_down_optical_axis,
     hemisphere_slerp,
+    plot_trajectory_in_meshcat,
+    setup_gcs_traj_opt_from_q1_to_q2,
+    solve_gcs_traj_opt,
+    solve_gcs_traj_opt_async,
     sphere_frame,
 )
 from utils.plotting import (
@@ -76,10 +85,12 @@ class State(Enum):
     IDLE = auto()
     WAITING_FOR_NEXT_SCAN = auto()
     PLANNING_MOVE_TO_START = auto()
+    COMPUTING_MOVE_TO_START = auto()
     MOVING_TO_START = auto()
     MOVING_ALONG_HEMISPHERE = auto()
     MOVING_DOWN_OPTICAL_AXIS = auto()
     PLANNING_ALONG_ALTERNATE_PATH = auto()
+    COMPUTING_ALONG_ALTERNATE_PATH = auto()
     MOVING_ALONG_ALTERNATE_PATH = auto()
     COMPUTING_IKS = auto()
     PAUSE = auto()
@@ -157,7 +168,7 @@ def main(
     num_scan_points = 50
     coverage = 0.40  # Fraction of hemisphere to cover
     distance_along_optical_axis = 0.025
-    num_pictures = 30
+    num_pictures = 1  # Default is 30
     elbow_angle = np.deg2rad(135)
     scan_idx = 1  # Default is 1
 
@@ -244,19 +255,6 @@ def main(
         station.GetOutputPort("iiwa.position_measured"), state_logger.get_input_port()
     )
 
-    # Create dummy constant position source (using station's default position)
-    # default_position = station.get_iiwa_controller_plant().GetPositions(
-    #     station.get_iiwa_controller_plant().CreateDefaultContext()
-    # )
-
-    # iiwa_joint_1: [0]
-    # iiwa_joint_2: [0.1]
-    # iiwa_joint_3: [0]
-    # iiwa_joint_4: [-1.2]
-    # iiwa_joint_5: [0]
-    # iiwa_joint_6: [1.6]
-    # iiwa_joint_7: [0]
-
     default_position = np.array([1.57079, 0.1, 0, -1.2, 0, 1.6, 0])
     dummy = builder.AddSystem(ConstantVectorSource(default_position))
     builder.Connect(
@@ -325,9 +323,6 @@ def main(
     joint_lower_limits = station.get_internal_plant().GetPositionLowerLimits()
     joint_upper_limits = station.get_internal_plant().GetPositionUpperLimits()
 
-    print(colored("Joint lower limits: ", "blue"), np.rad2deg(joint_lower_limits))
-    print(colored("Joint upper limits: ", "blue"), np.rad2deg(joint_upper_limits))
-
     # Button management
     num_move_to_top_clicks = 0
     num_compute_iks_clicks = 0
@@ -352,6 +347,16 @@ def main(
         "valid_collisions": True,
         "trajectory": None,
         "trajectory_start_time": None,
+    }
+    move_to_start_gcs_result = {
+        "ready": False,
+        "success": False,
+        "trajectory": None,
+    }
+    alternate_gcs_result = {
+        "ready": False,
+        "success": False,
+        "trajectory": None,
     }
 
     # Initialize SEW Plane visualization (Actual)
@@ -433,16 +438,17 @@ def main(
     else:
         print(colored("✓ Camera disabled via --no_cam", "yellow"))
 
-        # visualize all hemisphere waypoints
-        T_cam_to_tip = np.array(
-            [
-                [0, -1, 0],
-                [-1, 0, 0],
-                [0, 0, -1],
-            ]
-        )
-        T_cam_to_tip = RotationMatrix(T_cam_to_tip)
-        T_cam_to_tip = RigidTransform(T_cam_to_tip)
+    # visualize all hemisphere waypoints
+    T_cam_to_tip = np.array(
+        [
+            [0, -1, 0],
+            [-1, 0, 0],
+            [0, 0, -1],
+        ]
+    )
+    T_cam_to_tip = RotationMatrix(T_cam_to_tip)
+    T_cam_to_tip = RigidTransform(T_cam_to_tip)
+
     for i, wp in enumerate(hemisphere_waypoints):
         draw_triad(
             station.internal_meshcat,
@@ -505,7 +511,7 @@ def main(
 
         if state == State.IDLE:
             if station.internal_meshcat.GetButtonClicks("Plan Move to Start") > 0:
-                print(colored("Planning move to start", "cyan"))
+                print(colored("Planning move to start (async)", "cyan"))
 
                 station_context = station.GetMyContextFromRoot(simulator.get_context())
                 q_initial = station.GetOutputPort("iiwa.position_measured").Eval(
@@ -521,74 +527,58 @@ def main(
                 )
 
                 # Step 2) Find IK closest to current joint values
-                station_context = station.GetMyContextFromRoot(simulator.get_context())
                 q_curr = station.GetOutputPort("iiwa.position_measured").Eval(
                     station_context
                 )
                 q_des = kinematics_solver.find_closest_solution(Q, q_curr)
 
-                # initial_trajectory = create_traj_from_q1_to_q2(
-                #     station,
-                #     q_initial,
-                #     q_des,
+                # # Start background thread for GCS planning
+                # move_to_start_gcs_result["ready"] = False
+                # move_to_start_gcs_thread = threading.Thread(
+                #     target=solve_gcs_traj_opt_async,
+                #     args=(
+                #         station,
+                #         q_initial,
+                #         q_des,
+                #         vel_limits,
+                #         acc_limits,
+                #         move_to_start_gcs_result,
+                #         1.0,  # duration_cost
+                #         1.0,  # path_length_cost
+                #         True, # visualize_solving
+                #     ),
+                #     daemon=True,
                 # )
+                # move_to_start_gcs_thread.start()
+                # state = State.COMPUTING_MOVE_TO_START
 
-                (
-                    trajopt,
-                    prog,
-                    traj_plot_state,
-                ) = setup_trajectory_optimization_from_q1_to_q2(
-                    station=station,
-                    q1=q_initial,
-                    q2=q_des,
-                    vel_limits=vel_limits,
-                    acc_limits=acc_limits,
-                    duration_constraints=(0.5, 5.0),
-                    num_control_points=10,
-                    duration_cost=1.0,
-                    path_length_cost=1.0,
-                    visualize_solving=True,
-                )
+                # Test IRIS
+                regions = compute_iris_regions()
 
-                # Solve for initial guess
-                traj_plot_state["rgba"] = Rgba(
-                    1, 0.5, 0, 1
-                )  # Set initial guess color to orange
-                result = Solve(prog)
-                if not result.is_success():
-                    print("Trajectory optimization failed, even without collisions!")
-                    print(result.get_solver_id().name())
-                trajopt.SetInitialGuess(trajopt.ReconstructTrajectory(result))
+        elif state == State.COMPUTING_MOVE_TO_START:
+            if move_to_start_gcs_result["ready"]:
+                if move_to_start_gcs_result["success"]:
+                    initial_trajectory = move_to_start_gcs_result["trajectory"]
 
-                trajopt = add_collision_constraints_to_trajectory(
-                    station,
-                    trajopt,
-                )
+                    plot_trajectory_in_meshcat(
+                        station,
+                        initial_trajectory,
+                        rgba=Rgba(1, 0.5, 0, 1),
+                        name="move_to_start_trajectory",
+                    )
 
-                traj_plot_state["rgba"] = Rgba(
-                    0, 1, 0, 1
-                )  # Set final trajectory color to green
-                result = Solve(prog)
-                if not result.is_success():
-                    print("Trajectory optimization failed")
-                    print(result.get_solver_id().name())
-                    continue
+                    print(
+                        colored(
+                            "✓ GCS planning for start move complete. Moving now...",
+                            "green",
+                        )
+                    )
+                    trajectory_start_time = simulator.get_context().get_time()
+                    state = State.PLANNING_MOVE_TO_START
+                else:
+                    print(colored("❌ GCS planning failed!", "red"))
+                    state = State.IDLE
 
-                print("Final trajectory optimization succeeded!")
-
-                initial_trajectory = resolve_with_toppra(  # At this point all this is doing is time-optimizing to make the traj as fast as possible
-                    station,
-                    trajopt,
-                    result,
-                    vel_limits,
-                    acc_limits,
-                )
-
-                print(
-                    f"✓ TOPPRA succeeded! Trajectory duration: {initial_trajectory.end_time():.2f}s"
-                )
-
-                state = State.PLANNING_MOVE_TO_START
         elif state == State.PLANNING_MOVE_TO_START:
             if station.internal_meshcat.GetButtonClicks("Move to Start") > 0:
                 trajectory_start_time = simulator.get_context().get_time()
@@ -693,22 +683,22 @@ def main(
                 if not hemisphere_ik_result["valid_joints"]:
                     print(
                         colored(
-                            "❌ Invalid joint values. Taking alternate path to next scan point",
+                            "❌ Invalid joint values. Taking alternate path to next scan point, after optical axis trajectory is computed",
                             "yellow",
                         )
                     )
-                    state = State.PLANNING_ALONG_ALTERNATE_PATH
-                    continue
+                    # state = State.MOVING_DOWN_OPTICAL_AXIS
+                    # continue
 
                 if not hemisphere_ik_result["valid_velocities"]:
                     print(
                         colored(
-                            "❌ Invalid joint velocities. Taking alternate path to next scan point",
+                            "❌ Invalid joint velocities. Taking alternate path to next scan point, after optical axis trajectory is computed",
                             "yellow",
                         )
                     )
-                    state = State.PLANNING_ALONG_ALTERNATE_PATH
-                    continue
+                    # state = State.MOVING_DOWN_OPTICAL_AXIS
+                    # continue
 
                 if not optical_axis_ik_result["valid_joints"]:
                     print(
@@ -718,25 +708,6 @@ def main(
                         )
                     )
                     break
-
-                # if not hemisphere_ik_result["valid_collisions"]:
-                #     print(
-                #         colored(
-                #             "❌ Collision detected in hemisphere trajectory. Taking alternate path to next scan point",
-                #             "yellow",
-                #         )
-                #     )
-                #     # state = State.PLANNING_ALONG_ALTERNATE_PATH
-                #     break
-
-                # if not optical_axis_ik_result["valid_collisions"]:
-                #     print(
-                #         colored(
-                #             "❌ Collision detected in optical axis IK. Quitting program.",
-                #             "red",
-                #         )
-                #     )
-                #     break
 
                 if not optical_axis_ik_result["valid_velocities"]:
                     print(
@@ -792,61 +763,15 @@ def main(
 
                 scan_idx += 1
 
-                # state = State.MOVING_DOWN_OPTICAL_AXIS
-                state = State.MOVING_ALONG_HEMISPHERE
+                state = State.MOVING_DOWN_OPTICAL_AXIS
+                # state = State.MOVING_ALONG_HEMISPHERE
 
         elif state == State.PLANNING_ALONG_ALTERNATE_PATH:
-            print(colored("Planning alternate path", "cyan"))
+            print(colored("Planning alternate path (async)", "cyan"))
 
             station_context = station.GetMyContextFromRoot(simulator.get_context())
             q_current = station.GetOutputPort("iiwa.position_measured").Eval(
                 station_context
-            )
-
-            # Step 1: Optimize trajectory from current position to q_initial
-            (
-                trajopt_start,
-                prog_start,
-                traj_plot_state_start,
-            ) = setup_trajectory_optimization_from_q1_to_q2(
-                station=station,
-                q1=q_current,
-                q2=q_initial,
-                vel_limits=vel_limits,
-                acc_limits=acc_limits,
-                duration_constraints=(0.5, 5.0),
-                num_control_points=10,
-                duration_cost=1.0,
-                path_length_cost=1.0,
-                visualize_solving=True,
-            )
-
-            traj_plot_state_start["rgba"] = Rgba(1, 0.5, 0, 1)
-            result_start = Solve(prog_start)
-            if not result_start.is_success():
-                print(colored("Trajectory optimization to start failed!", "red"))
-                continue
-
-            trajopt_start.SetInitialGuess(
-                trajopt_start.ReconstructTrajectory(result_start)
-            )
-            trajopt_start = add_collision_constraints_to_trajectory(
-                station, trajopt_start
-            )
-
-            traj_plot_state_start["rgba"] = Rgba(0, 1, 0, 1)
-            result_start = Solve(prog_start)
-            if not result_start.is_success():
-                print(
-                    colored(
-                        "Trajectory optimization to start failed with collisions constraints!",
-                        "red",
-                    )
-                )
-                continue
-
-            traj_to_start = resolve_with_toppra(
-                station, trajopt_start, result_start, vel_limits, acc_limits
             )
 
             target_pose = hemisphere_waypoints[scan_idx]
@@ -859,54 +784,42 @@ def main(
 
             q_des = kinematics_solver.find_closest_solution(Q, q_initial)
 
-            # Step 2: Optimize trajectory from q_initial to q_des
-            (
-                trajopt_next,
-                prog_next,
-                traj_plot_state_next,
-            ) = setup_trajectory_optimization_from_q1_to_q2(
-                station=station,
-                q1=q_initial,
-                q2=q_des,
-                vel_limits=vel_limits,
-                acc_limits=acc_limits,
-                duration_constraints=(0.5, 5.0),
-                num_control_points=10,
-                duration_cost=1.0,
-                path_length_cost=1.0,
-                visualize_solving=True,
+            # Start background thread for GCS planning
+            alternate_gcs_result["ready"] = False
+            alternate_gcs_thread = threading.Thread(
+                target=solve_gcs_traj_opt_async,
+                args=(
+                    station,
+                    q_current,
+                    q_des,
+                    vel_limits,
+                    acc_limits,
+                    alternate_gcs_result,
+                    1.0,  # duration_cost
+                    1.0,  # path_length_cost
+                    True,  # visualize_solving
+                ),
+                daemon=True,
             )
+            alternate_gcs_thread.start()
+            state = State.COMPUTING_ALONG_ALTERNATE_PATH
 
-            traj_plot_state_next["rgba"] = Rgba(1, 0.5, 0, 1)
-            result_next = Solve(prog_next)
-            if not result_next.is_success():
-                print(colored("Trajectory optimization to next scan failed!", "red"))
-                continue
-
-            trajopt_next.SetInitialGuess(
-                trajopt_next.ReconstructTrajectory(result_next)
-            )
-            trajopt_next = add_collision_constraints_to_trajectory(
-                station, trajopt_next
-            )
-
-            traj_plot_state_next["rgba"] = Rgba(0, 1, 0, 1)
-            result_next = Solve(prog_next)
-            if not result_next.is_success():
-                print(
-                    colored(
-                        "Trajectory optimization to next scan failed with collisions constraints!",
-                        "red",
+        elif state == State.COMPUTING_ALONG_ALTERNATE_PATH:
+            if alternate_gcs_result["ready"]:
+                if alternate_gcs_result["success"]:
+                    traj_to_next_scan = alternate_gcs_result["trajectory"]
+                    print(
+                        colored(
+                            "✓ GCS planning for alternate path complete. Moving now...",
+                            "green",
+                        )
                     )
-                )
-                continue
-
-            traj_to_next_scan = resolve_with_toppra(
-                station, trajopt_next, result_next, vel_limits, acc_limits
-            )
-
-            state = State.MOVING_ALONG_ALTERNATE_PATH
-            trajectory_start_time = simulator.get_context().get_time()
+                    trajectory_start_time = simulator.get_context().get_time()
+                    state = State.MOVING_ALONG_ALTERNATE_PATH
+                else:
+                    print(colored("❌ GCS planning failed!", "red"))
+                    # Fallback or retry logic could go here
+                    state = State.DONE  # Stop for now if planning fails
 
         elif state == State.MOVING_ALONG_ALTERNATE_PATH:
             # need to follow traj_to_start, and then traj_to_next_scan
@@ -914,18 +827,8 @@ def main(
             current_time = simulator.get_context().get_time()
             traj_time = current_time - trajectory_start_time
 
-            if traj_time <= traj_to_start.end_time():
-                q_desired = traj_to_start.value(traj_time)
-                station_context = station.GetMyMutableContextFromRoot(
-                    simulator.get_mutable_context()
-                )
-                station.GetInputPort("iiwa.position").FixValue(
-                    station_context, q_desired
-                )
-            elif traj_time <= traj_to_start.end_time() + traj_to_next_scan.end_time():
-                q_desired = traj_to_next_scan.value(
-                    traj_time - traj_to_start.end_time()
-                )
+            if traj_time <= traj_to_next_scan.end_time():
+                q_desired = traj_to_next_scan.value(traj_time)
                 station_context = station.GetMyMutableContextFromRoot(
                     simulator.get_mutable_context()
                 )
@@ -1085,7 +988,13 @@ def main(
             else:
                 print(colored("✓ Optical axis trajectory execution complete!", "green"))
                 trajectory_start_time = simulator.get_context().get_time()
-                state = State.MOVING_ALONG_HEMISPHERE
+
+                # if (hemisphere_ik_result["valid_joints"] and hemisphere_ik_result["valid_velocities"]):
+                #     state = State.MOVING_ALONG_HEMISPHERE
+                # else:
+                #     state = State.PLANNING_ALONG_ALTERNATE_PATH
+
+                state = State.PLANNING_ALONG_ALTERNATE_PATH
 
         elif state == State.DONE:
             context = simulator.get_context()

@@ -76,7 +76,7 @@ def check_joint_velocities(
     Check if joint velocities in a trajectory exceed specified limits.
 
     Args:
-        trajectory_joint_poses: (7, N) array of joint positions
+        trajectory_joint_poses: (7, N) array of joint positions, in radians
         t: (N,) array of time values
         max_joint_velocities: (7,) array of maximum allowed joint velocities (absolute value)
 
@@ -238,6 +238,9 @@ def check_safety_constraints(
     else:
         is_valid_collisions = True
         violations_collisions = []
+
+    print(colored("Max recorded velocity: ", "yellow"))
+    print(colored(max_recorded_velocity, "yellow"))
 
     is_valid = is_valid_limits and is_valid_velocities and is_valid_collisions
 

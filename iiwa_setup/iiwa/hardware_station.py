@@ -247,12 +247,12 @@ class InternalStationDiagram(Diagram):
         )
 
         # add sphere to visualize collisions
-        leeway = 0.02  # space to give microscope tip to avoid collision
+        obj_radius = 0.05  # space to give microscope tip to avoid collision
         add_sphere(
             self._plant,
             name="collision_sphere",
             position=self.hemisphere_pos,
-            radius=self.hemisphere_radius - leeway,
+            radius=obj_radius,
             color=[1.0, 1.0, 1.0, 1.0],
             collision=False,
         )
@@ -334,12 +334,12 @@ class InternalStationDiagram(Diagram):
             collision=False,
         )
 
-        leeway = 0.02  # space to give microscope tip to avoid collision
+        # leeway = 0.05  # space to give microscope tip to avoid collision
         add_sphere(  # collision sphere within scan_sphere
             self._optimization_plant,
             name="collision_sphere",
             position=self.hemisphere_pos,
-            radius=self.hemisphere_radius - leeway,
+            radius=obj_radius,
             collision=True,
         )
 

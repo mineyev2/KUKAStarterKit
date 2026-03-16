@@ -38,13 +38,13 @@
     <link name="microscope_tip_link">
       <pose>-0.0674 0.0428 -0.0946 0 0 0</pose> <!-- tip frame should be same as world when microscope is pointing down -->
       <!-- Collision geometry -->
-      <collision name="microscope_tip_collision">
+      <!-- <collision name="microscope_tip_collision">
         <geometry>
           <sphere>
             <radius>0.01</radius>
           </sphere>
         </geometry>
-      </collision>
+      </collision> -->
 
       <!-- Visual geometry -->
       <visual name="microscope_tip_visual">
