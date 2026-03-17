@@ -574,21 +574,22 @@ files = [
 
 [[package]]
 name = "drake"
-version = "1.42.0"
+version = "1.44.0"
 description = "Model-based design and verification for robotics"
 optional = false
 python-versions = ">=3.10"
 files = [
-    {file = "drake-1.42.0-cp310-cp310-manylinux_2_34_x86_64.whl", hash = "sha256:b36d95b3fa3d041bba91fb80ac39592aae32295308fd032290950d8089f02c43"},
-    {file = "drake-1.42.0-cp311-cp311-manylinux_2_34_x86_64.whl", hash = "sha256:db82cda9b7b5e286866246942d6f8a4b229448c0ce48816e6a4bb4c04f6da601"},
-    {file = "drake-1.42.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:24f500fb5169a1eaca3954d4ffdaf619afa18a79741b42e063b7face771971b4"},
-    {file = "drake-1.42.0-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:21cbbaba8ac59391d2fd76a3118bdad8a004102618853266d5dcb3b216cb41a1"},
-    {file = "drake-1.42.0-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:d8133b16aca215b958ef38c9731f096c0c5e0b62233c443286344f0eff97a6ba"},
-    {file = "drake-1.42.0-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:21fc55588019058131b3af4655380c1d86d1d46a1cea636f96950e1f03e43e63"},
+    {file = "drake-1.44.0-cp310-cp310-manylinux_2_34_x86_64.whl", hash = "sha256:a9dab6476d6237f0f8f06d2ca4ad7d53b02c0d4b9ad29a9809a27e08e2362c77"},
+    {file = "drake-1.44.0-cp311-cp311-manylinux_2_34_x86_64.whl", hash = "sha256:0893ea403946a01323753f53ce7272eb7d0cb9499f7188d2b5597898c47dd4a9"},
+    {file = "drake-1.44.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:6d6912e83d0785b26c5b31bef6082926c87a3a452590a5a4e97c4d4498d4c079"},
+    {file = "drake-1.44.0-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:b7b80fd461e6c3c390cb88f42ceb48ee2a4bbfdf13c23b5d3ec8df0d72dd44a7"},
+    {file = "drake-1.44.0-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:d26784366a116ac0e8425e34f05ea6658dfb7e7fb46770e5fec4ddd65049ce68"},
+    {file = "drake-1.44.0-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:0a9ae7871d06a7d067a7ae67a06e4aa83304889d98ad46933e995240d871b463"},
 ]
 
 [package.dependencies]
 matplotlib = "*"
+Mosek = "11.0.24"
 numpy = "*"
 pydot = "*"
 PyYAML = "*"
@@ -1624,6 +1625,22 @@ files = [
 ]
 
 [[package]]
+name = "mosek"
+version = "11.0.24"
+description = "Python API for Mosek"
+optional = false
+python-versions = "<3.14,>=3.9"
+files = [
+    {file = "mosek-11.0.24-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:7f2ab70ad3357f9187c96237d0c49187f82f5885250a5e211b6aa20cb0a7207f"},
+    {file = "mosek-11.0.24-cp39-abi3-manylinux2014_x86_64.whl", hash = "sha256:c2530037875aa7f04738498e8f376e60340e3c3243741b3cebb40213025bcddb"},
+    {file = "mosek-11.0.24-cp39-abi3-manylinux_2_29_aarch64.whl", hash = "sha256:5e4f396bea15a4295c3f186807e7e0f2e2b76423a6ed7849336f9bd06795d674"},
+    {file = "mosek-11.0.24-cp39-abi3-win_amd64.whl", hash = "sha256:a4aa8dd9e54672f56a66ce9ec9a280881701824704b76f35b78bc73e32c9c6a9"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[[package]]
 name = "mpld3"
 version = "0.5.10"
 description = "D3 Viewer for Matplotlib"
@@ -1815,6 +1832,30 @@ files = [
     {file = "numpy-2.2.6-pp310-pypy310_pp73-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ce47521a4754c8f4593837384bd3424880629f718d87c5d44f8ed763edd63543"},
     {file = "numpy-2.2.6-pp310-pypy310_pp73-win_amd64.whl", hash = "sha256:d042d24c90c41b54fd506da306759e06e568864df8ec17ccc17e9e884634fd00"},
     {file = "numpy-2.2.6.tar.gz", hash = "sha256:e29554e2bef54a90aa5cc07da6ce955accb83f21ab5de01a62c8478897b264fd"},
+]
+
+[[package]]
+name = "nvidia-cuda-runtime-cu12"
+version = "12.9.79"
+description = "CUDA Runtime native Libraries"
+optional = false
+python-versions = ">=3"
+files = [
+    {file = "nvidia_cuda_runtime_cu12-12.9.79-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:83469a846206f2a733db0c42e223589ab62fd2fabac4432d2f8802de4bded0a4"},
+    {file = "nvidia_cuda_runtime_cu12-12.9.79-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:25bba2dfb01d48a9b59ca474a1ac43c6ebf7011f1b0b8cc44f54eb6ac48a96c3"},
+    {file = "nvidia_cuda_runtime_cu12-12.9.79-py3-none-win_amd64.whl", hash = "sha256:8e018af8fa02363876860388bd10ccb89eb9ab8fb0aa749aaf58430a9f7c4891"},
+]
+
+[[package]]
+name = "nvidia-curand-cu12"
+version = "10.3.10.19"
+description = "CURAND native runtime libraries"
+optional = false
+python-versions = ">=3"
+files = [
+    {file = "nvidia_curand_cu12-10.3.10.19-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:de663377feb1697e1d30ed587b07d5721fdd6d2015c738d7528a6002a6134d37"},
+    {file = "nvidia_curand_cu12-10.3.10.19-py3-none-manylinux_2_27_x86_64.whl", hash = "sha256:49b274db4780d421bd2ccd362e1415c13887c53c214f0d4b761752b8f9f6aa1e"},
+    {file = "nvidia_curand_cu12-10.3.10.19-py3-none-win_amd64.whl", hash = "sha256:e8129e6ac40dc123bd948e33d3e11b4aa617d87a583fa2f21b3210e90c743cde"},
 ]
 
 [[package]]
@@ -2307,6 +2348,26 @@ files = [
 
 [package.extras]
 tests = ["pytest"]
+
+[[package]]
+name = "pycolmap-cuda12"
+version = "3.13.0"
+description = "COLMAP bindings"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "pycolmap_cuda12-3.13.0-cp310-cp310-manylinux_2_34_x86_64.whl", hash = "sha256:132a070fce35f6e5689d9c6fedd58f06d21a281d1c3fabeea29cd939d6c31c4e"},
+    {file = "pycolmap_cuda12-3.13.0-cp311-cp311-manylinux_2_34_x86_64.whl", hash = "sha256:b625b9b8696ce98e2cf1031f9e581f1ba33336ff4b68b74c7e3fa6b9f420bd43"},
+    {file = "pycolmap_cuda12-3.13.0-cp312-cp312-manylinux_2_34_x86_64.whl", hash = "sha256:da80d10df5325fbb14d48ff79265660b6ba5d604875579101b6bf97cfe7740f2"},
+    {file = "pycolmap_cuda12-3.13.0-cp313-cp313-manylinux_2_34_x86_64.whl", hash = "sha256:5556b82ce973d21cd5cc41db0e59fe87e34cafaa1ff96765c2c9f8acce8b6d66"},
+    {file = "pycolmap_cuda12-3.13.0-cp314-cp314-manylinux_2_34_x86_64.whl", hash = "sha256:bdc1d1012fd9085e286000bc0480d751f3d6773088b219ab24c7af6e01715710"},
+    {file = "pycolmap_cuda12-3.13.0-cp39-cp39-manylinux_2_34_x86_64.whl", hash = "sha256:2ef4a331fed1991f8d5767c54897b78df44de867533f935866279451b65ee0eb"},
+]
+
+[package.dependencies]
+numpy = "*"
+nvidia-cuda-runtime-cu12 = "12.9.79"
+nvidia-curand-cu12 = "10.3.10.19"
 
 [[package]]
 name = "pycparser"
@@ -3088,4 +3149,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.0"
 python-versions = "~3.10"
-content-hash = "01f3d41133075739a6fe972a239f1ecac5a87778ddae73d388b25e057d516e6e"
+content-hash = "911421fccc7e22622d411c2b8a089b586b135ea27d028f6934c9425ae53ab7bd"

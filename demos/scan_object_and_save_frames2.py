@@ -553,7 +553,7 @@ def main(
                 # state = State.COMPUTING_MOVE_TO_START
 
                 # Test IRIS
-                regions = compute_iris_regions()
+                regions = compute_iris_regions(station)
 
         elif state == State.COMPUTING_MOVE_TO_START:
             if move_to_start_gcs_result["ready"]:

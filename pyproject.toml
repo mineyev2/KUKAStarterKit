@@ -8,7 +8,7 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "~3.10"
 # drake = { ersion = ">=0.0.20250118 <1.0", source = "drake-nightly" }
-drake = ">=1.26.0"
+drake = "1.44.0"
 numpy = "^2.0.0"
 manipulation = "^2025.3.3"
 tqdm = "^4.66.1"

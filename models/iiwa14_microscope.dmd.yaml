@@ -13,12 +13,12 @@ directives:
 - add_weld:
     parent: world
     child: iiwa::iiwa_link_0
-- add_model:
-    name: microscope_mount
-    file: package://iiwa_setup/microscope_mount.sdf
-- add_weld:
-    parent: iiwa::iiwa_link_ee_kuka
-    child: microscope_mount::microscope_link
-    X_PC:
-        translation: [0, 0, 0.007] # Set microscope tip location here
-        rotation: !Rpy { deg: [0, 180, 180] }  # Roll, Pitch, Yaw in degrees
+# - add_model:
+#     name: microscope_mount
+#     file: package://iiwa_setup/microscope_mount.sdf
+# - add_weld:
+#     parent: iiwa::iiwa_link_ee_kuka
+#     child: microscope_mount::microscope_link
+#     X_PC:
+#         translation: [0, 0, 0.007] # Set microscope tip location here
+#         rotation: !Rpy { deg: [0, 180, 180] }  # Roll, Pitch, Yaw in degrees
