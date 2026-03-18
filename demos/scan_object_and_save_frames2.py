@@ -27,53 +27,28 @@ from pydrake.all import (
     Box,
     ConstantVectorSource,
     DiagramBuilder,
-    FrameIndex,
-    GraphOfConvexSetsOptions,
     LogVectorOutput,
     MeshcatVisualizer,
-    PiecewisePolynomial,
     Rgba,
     RigidTransform,
     RotationMatrix,
     Simulator,
-    SnoptSolver,
-    Solve,
 )
 from termcolor import colored
 
 from iiwa_setup.iiwa import IiwaForwardKinematics, IiwaHardwareStationDiagram
-from iiwa_setup.util.traj_planning import (
-    add_collision_constraints_to_trajectory,
-    create_traj_from_q1_to_q2,
-    resolve_gcs_with_toppra,
-    resolve_with_toppra,
-    setup_trajectory_optimization_from_q1_to_q2,
-    setup_trajectory_optimization_from_q1_to_q2_without_collision_constraints,
-)
+from iiwa_setup.util.traj_planning import solve_kinematic_traj_opt_async
 from iiwa_setup.util.visualizations import draw_triad
 from utils.iris import compute_iris_regions
 from utils.kuka_geo_kin import KinematicsSolver
 from utils.planning import (
     compute_hemisphere_traj_async,
     compute_optical_axis_traj_async,
-    find_target_pose_on_hemisphere,
     generate_hemisphere_waypoints,
-    generate_IK_solutions_for_path,
-    generate_poses_along_hemisphere,
-    generate_waypoints_down_optical_axis,
-    hemisphere_slerp,
+    plot_configs_in_meshcat,
     plot_trajectory_in_meshcat,
-    setup_gcs_traj_opt_from_q1_to_q2,
-    solve_gcs_traj_opt,
-    solve_gcs_traj_opt_async,
-    sphere_frame,
 )
-from utils.plotting import (
-    plot_hemisphere_waypoints,
-    plot_path_with_frames,
-    plot_trajectories_side_by_side,
-    save_trajectory_plots,
-)
+from utils.plotting import plot_hemisphere_waypoints
 from utils.sew_stereo import (
     compute_psi_from_matrices,
     compute_sew_and_ref_matrices,
@@ -98,7 +73,9 @@ class State(Enum):
 
 
 def main(
-    use_hardware: bool, no_cam: bool = False, show_sew_planes: bool = False
+    use_hardware: bool,
+    no_cam: bool = False,
+    show_sew_planes: bool = False,
 ) -> None:
     # Load configuration
     cfg = get_config(use_hardware)
@@ -246,6 +223,8 @@ def main(
         ),
     )
 
+    kinematics_solver = KinematicsSolver(station, r, v)
+
     # Log joint positions using station's exported output port
     from pydrake.systems.primitives import VectorLogSink
 
@@ -255,7 +234,15 @@ def main(
         station.GetOutputPort("iiwa.position_measured"), state_logger.get_input_port()
     )
 
-    default_position = np.array([1.57079, 0.1, 0, -1.2, 0, 1.6, 0])
+    default_position = np.array([hemisphere_angle, 0.1, 0, -1.2, 0, 1.6, 0])
+    # use ik solution of scan_idx as default posiiton
+    # q = kinematics_solver.IK_for_microscope(
+    #     hemisphere_waypoints[scan_idx].rotation().matrix(),
+    #     hemisphere_waypoints[scan_idx].translation(),
+    #     psi=elbow_angle,
+    # )[0]
+
+    # default_position = q
     dummy = builder.AddSystem(ConstantVectorSource(default_position))
     builder.Connect(
         dummy.get_output_port(),
@@ -308,7 +295,6 @@ def main(
     station.internal_meshcat.AddSlider("Current PSI (deg)", -180, 180, 0.1, 0)
 
     # region Step 1) Solve IK for desired pose
-    kinematics_solver = KinematicsSolver(station, r, v)
 
     station_context = station.GetMyContextFromRoot(simulator.get_context())
 
@@ -352,11 +338,13 @@ def main(
         "ready": False,
         "success": False,
         "trajectory": None,
+        "guess_qs": None,
     }
     alternate_gcs_result = {
         "ready": False,
         "success": False,
         "trajectory": None,
+        "guess_qs": None,
     }
 
     # Initialize SEW Plane visualization (Actual)
@@ -532,39 +520,47 @@ def main(
                 )
                 q_des = kinematics_solver.find_closest_solution(Q, q_curr)
 
-                # # Start background thread for GCS planning
-                # move_to_start_gcs_result["ready"] = False
-                # move_to_start_gcs_thread = threading.Thread(
-                #     target=solve_gcs_traj_opt_async,
-                #     args=(
-                #         station,
-                #         q_initial,
-                #         q_des,
-                #         vel_limits,
-                #         acc_limits,
-                #         move_to_start_gcs_result,
-                #         1.0,  # duration_cost
-                #         1.0,  # path_length_cost
-                #         True, # visualize_solving
-                #     ),
-                #     daemon=True,
-                # )
-                # move_to_start_gcs_thread.start()
-                # state = State.COMPUTING_MOVE_TO_START
+                # Start background thread for kinematic trajectory planning
+                move_to_start_gcs_result["ready"] = False
+                move_to_start_gcs_thread = threading.Thread(
+                    target=solve_kinematic_traj_opt_async,
+                    args=(
+                        station,
+                        q_initial,
+                        q_initial,
+                        q_des,
+                        vel_limits,
+                        acc_limits,
+                        move_to_start_gcs_result,
+                        # (0.5, 10.0),
+                        # 10,
+                        # 1.0,
+                        # 1.0,
+                        # True,  # visualize_solving
+                    ),
+                    daemon=True,
+                )
+                move_to_start_gcs_thread.start()
+                state = State.COMPUTING_MOVE_TO_START
 
                 # Test IRIS
-                regions = compute_iris_regions(station)
+                # regions = compute_iris_regions(station)
 
         elif state == State.COMPUTING_MOVE_TO_START:
             if move_to_start_gcs_result["ready"]:
                 if move_to_start_gcs_result["success"]:
                     initial_trajectory = move_to_start_gcs_result["trajectory"]
 
+                    plot_configs_in_meshcat(
+                        station,
+                        move_to_start_gcs_result["guess_qs"],
+                        name="guess_traj",
+                    )
+
                     plot_trajectory_in_meshcat(
                         station,
                         initial_trajectory,
-                        rgba=Rgba(1, 0.5, 0, 1),
-                        name="move_to_start_trajectory",
+                        name="final_traj",
                     )
 
                     print(
@@ -580,9 +576,11 @@ def main(
                     state = State.IDLE
 
         elif state == State.PLANNING_MOVE_TO_START:
-            if station.internal_meshcat.GetButtonClicks("Move to Start") > 0:
-                trajectory_start_time = simulator.get_context().get_time()
-                state = State.MOVING_TO_START
+            # if station.internal_meshcat.GetButtonClicks("Move to Start") <= 0:
+            #     continue
+
+            trajectory_start_time = simulator.get_context().get_time()
+            state = State.MOVING_TO_START
         elif state == State.WAITING_FOR_NEXT_SCAN:
             # if (
             #     station.internal_meshcat.GetButtonClicks("Compute IKs")
@@ -784,20 +782,18 @@ def main(
 
             q_des = kinematics_solver.find_closest_solution(Q, q_initial)
 
-            # Start background thread for GCS planning
+            # Start background thread for kinematic trajectory planning
             alternate_gcs_result["ready"] = False
             alternate_gcs_thread = threading.Thread(
-                target=solve_gcs_traj_opt_async,
+                target=solve_kinematic_traj_opt_async,
                 args=(
                     station,
                     q_current,
+                    q_initial,
                     q_des,
                     vel_limits,
                     acc_limits,
                     alternate_gcs_result,
-                    1.0,  # duration_cost
-                    1.0,  # path_length_cost
-                    True,  # visualize_solving
                 ),
                 daemon=True,
             )
@@ -806,8 +802,21 @@ def main(
 
         elif state == State.COMPUTING_ALONG_ALTERNATE_PATH:
             if alternate_gcs_result["ready"]:
+                plot_configs_in_meshcat(
+                    station,
+                    alternate_gcs_result["guess_qs"],
+                    name="guess_traj",
+                )
+
                 if alternate_gcs_result["success"]:
                     traj_to_next_scan = alternate_gcs_result["trajectory"]
+
+                    plot_trajectory_in_meshcat(
+                        station,
+                        traj_to_next_scan,
+                        name="final_traj",
+                    )
+
                     print(
                         colored(
                             "✓ GCS planning for alternate path complete. Moving now...",

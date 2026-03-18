@@ -1,4 +1,11 @@
+import os
+import time
+
 import numpy as np
+
+from requests import options
+
+os.environ["MOSEKLM_LICENSE_FILE"] = "/home/rmineyev3/mosek/mosek.lic"
 
 # Drake
 from pydrake.all import (
@@ -7,6 +14,7 @@ from pydrake.all import (
     GraphOfConvexSetsOptions,
     HPolyhedron,
     KinematicTrajectoryOptimization,
+    LoadIrisRegionsYamlFile,
     MinimumDistanceLowerBoundConstraint,
     PiecewisePolynomial,
     Point,
@@ -14,7 +22,9 @@ from pydrake.all import (
     RigidTransform,
     RotationMatrix,
     Solve,
+    Sphere,
 )
+from pydrake.solvers import MosekSolver, SnoptSolver
 from termcolor import colored
 
 from iiwa_setup.motion_planning.toppra import reparameterize_with_toppra
@@ -570,15 +580,28 @@ def compute_simple_traj_from_q1_to_q2(
     return traj
 
 
+def _draw_positions_as_spheres(meshcat, positions, name, rgba, radius=0.004):
+    """
+    Draw a list of 3D positions as spheres in meshcat.
+    Clears the parent path first so stale dots from a previous call are removed.
+    """
+    meshcat.Delete(name)
+    sphere = Sphere(radius)
+    for i, pos in enumerate(positions):
+        meshcat.SetObject(f"{name}/{i}", sphere, rgba)
+        meshcat.SetTransform(f"{name}/{i}", RigidTransform(pos))
+
+
 def plot_trajectory_in_meshcat(
     station,
     trajectory,
     rgba=Rgba(0, 1, 0, 1),
     name="gcs_path",
     num_samples=100,
+    radius=0.004,
 ):
     """
-    Visualize a Drake Trajectory in Meshcat by sampling and computing FK.
+    Visualize a Drake Trajectory in Meshcat by sampling FK and drawing spheres.
     """
     internal_plant = station.get_internal_plant()
     internal_context = station.get_internal_plant_context()
@@ -595,29 +618,48 @@ def plot_trajectory_in_meshcat(
         return
 
     if t_start >= t_end:
-        print(
-            f"Warning: Trajectory '{name}' has zero or negative duration, skipping visualization."
-        )
+        print(f"Warning: Trajectory '{name}' has zero or negative duration, skipping.")
         return
 
-    s_samples = np.linspace(t_start, t_end, num_samples)
-    ee_positions = []
-    for s in s_samples:
-        q = trajectory.value(s).flatten()
+    positions = []
+    for t in np.linspace(t_start, t_end, num_samples):
+        q = trajectory.value(t).flatten()
         internal_plant.SetPositions(internal_context, q)
-        # Note: "microscope_tip_link" is the expected end-effector body name
         X_WB = internal_plant.EvalBodyPoseInWorld(
-            internal_context,
-            internal_plant.GetBodyByName("microscope_tip_link"),
+            internal_context, internal_plant.GetBodyByName("microscope_tip_link")
         )
-        ee_positions.append(X_WB.translation())
+        positions.append(X_WB.translation())
 
-    ee_positions = np.array(ee_positions).T  # shape (3, N)
-    station.internal_meshcat.SetLine(
-        f"positions/{name}",
-        ee_positions,
-        line_width=0.05,
-        rgba=rgba,
+    _draw_positions_as_spheres(
+        station.internal_meshcat, positions, f"positions/{name}", rgba, radius
+    )
+
+
+def plot_configs_in_meshcat(
+    station,
+    configs,
+    rgba=Rgba(1, 0.5, 0.0, 1),
+    name="configs_path",
+    radius=0.004,
+):
+    """
+    Visualize a list of joint configurations as spheres in meshcat.
+    Useful for displaying an initial guess or any discrete set of configs.
+    """
+
+    internal_plant = station.get_internal_plant()
+    internal_context = station.get_internal_plant_context()
+
+    positions = []
+    for q in configs:
+        internal_plant.SetPositions(internal_context, q)
+        X_WB = internal_plant.EvalBodyPoseInWorld(
+            internal_context, internal_plant.GetBodyByName("microscope_tip_link")
+        )
+        positions.append(X_WB.translation())
+
+    _draw_positions_as_spheres(
+        station.internal_meshcat, positions, f"positions/{name}", rgba, radius
     )
 
 
@@ -656,51 +698,56 @@ def PlotPath(
 
 
 def setup_gcs_traj_opt_from_q1_to_q2(
-    station,
     q1: np.ndarray,
     q2: np.ndarray,
     vel_limits: np.ndarray,
     acc_limits: np.ndarray,
     duration_cost: float = 1.0,
     path_length_cost: float = 1.0,
+    regions=None,
 ):
-    optimization_plant = station.get_optimization_plant()
+    gcs = GcsTrajectoryOptimization(len(q1))
 
-    trajopt = GcsTrajectoryOptimization(len(q1))
+    start = gcs.AddRegions([Point(q1)], order=0)
+    goal = gcs.AddRegions([Point(q2)], order=0)
 
-    workspace = trajopt.AddRegions(
-        regions=[
-            HPolyhedron.MakeBox(
-                optimization_plant.GetPositionLowerLimits().flatten(),
-                optimization_plant.GetPositionUpperLimits().flatten(),
-            )
-        ],
-        order=5,
+    print(colored("Added start and goal to GCS...", "grey"))
+
+    main = gcs.AddRegions(
+        regions=regions,
+        order=3,
+        h_min=0.1,  # NOTE: Default is 1e-6
+        h_max=20.0,
+        name="main",
     )
 
-    # Start and goal regions as points
-    start = trajopt.AddRegions([Point(q1)], order=0)
-    goal = trajopt.AddRegions([Point(q2)], order=0)
+    print(colored(f"Added {len(regions)} Iris regions to GCS...", "grey"))
 
-    for o in range(1, 5):  # continuity order = 4
-        print(f"adding C{o} constraints")
-        trajopt.AddContinuityConstraints(o)
+    gcs.AddEdges(start, main)
+    gcs.AddEdges(main, goal)
 
-    # ============= Edges =============
-    trajopt.AddEdges(start, workspace)
-    trajopt.AddEdges(workspace, goal)
+    print(colored("Added edges to GCS...", "grey"))
 
-    # ============= Costs =============
-    trajopt.AddTimeCost(duration_cost)
-    trajopt.AddPathLengthCost(path_length_cost)
+    main.AddTimeCost(duration_cost)
+    main.AddPathLengthCost(path_length_cost)
 
-    # ============= Velocity Bounds =============
-    trajopt.AddVelocityBounds(
-        optimization_plant.GetVelocityLowerLimits().flatten(),
-        optimization_plant.GetVelocityUpperLimits().flatten(),
-    )
+    print(colored("Added costs to GCS...", "grey"))
 
-    return trajopt, start, goal
+    # main.AddVelocityBounds(
+    #     optimization_plant.GetVelocityLowerLimits().flatten(),
+    #     optimization_plant.GetVelocityUpperLimits().flatten(),
+    # )
+
+    # print(colored("Added velocity bounds to GCS...", "grey"))
+
+    main.AddContinuityConstraints(
+        1
+    )  # C1 continuity for smoothness (position and velocity continuity)
+    main.AddContinuityConstraints(2)  # C2 continuity for smooth acceleration profiles
+
+    print(colored("Added continuity constraints to GCS...", "grey"))
+
+    return gcs, start, goal
 
 
 def resolve_gcs_with_toppra(
@@ -739,10 +786,7 @@ def solve_gcs_traj_opt(
     q2: np.ndarray,
     vel_limits: np.ndarray,
     acc_limits: np.ndarray,
-    duration_cost: float = 1.0,
-    path_length_cost: float = 1.0,
-    visualize_solving: bool = False,
-    use_iris: bool = True,
+    compute_iris: bool = False,
 ):
     """
 
@@ -751,24 +795,55 @@ def solve_gcs_traj_opt(
         success: bool (True if optimization succeeded)
     """
 
-    # 1) IRIS if use_iris is True
-    # if use_iris:
-    #     regions = compute_iris_regions()
+    if compute_iris:
+        regions = list(compute_iris_regions(station).values())
+    else:
+        regions = list(LoadIrisRegionsYamlFile("iris_regions_85.yaml").values())
+
+    # Debugging
+    q1_valid = -1
+    q2_valid = -1
+    for i, region in enumerate(regions):
+        # print(f"Region {i}: contains q1={region.PointInSet(q1)}, contains q2={region.PointInSet(q2)}")
+        if region.PointInSet(q1):
+            q1_valid = i
+        if region.PointInSet(q2):
+            q2_valid = i
+
+    if (q1_valid == -1) or (q2_valid == -1):
+        print(
+            colored("❌ Warning: q1 or q2 is not contained in any IRIS region!", "red")
+        )
+    else:
+        print(
+            colored(
+                f"✓ q1 is contained in region {q1_valid} and q2 is contained in region {q2_valid}",
+                "green",
+            )
+        )
 
     # 1) Setup GCS optimization problem
-    trajopt, start, goal = setup_gcs_traj_opt_from_q1_to_q2(
-        station=station,
+    gcs, start, goal = setup_gcs_traj_opt_from_q1_to_q2(
         q1=q1,
         q2=q2,
         vel_limits=vel_limits,
         acc_limits=acc_limits,
         duration_cost=1.0,
         path_length_cost=1.0,
+        regions=regions,
     )
 
     # 2) Solve optimization problem
     options = GraphOfConvexSetsOptions()
-    trajectory, result = trajopt.SolvePath(start, goal, options)
+    options.max_rounded_paths = 5  # default is 5
+    options.solver = MosekSolver()
+    options.restriction_solver = SnoptSolver()
+
+    # print time taken to solve
+    start_time = time.time()
+    trajectory, result = gcs.SolvePath(start, goal, options)
+    end_time = time.time()
+    print(f"GCS solve time: {end_time - start_time:.4f} seconds")
 
     # Quit if invalid
     if not result.is_success():
@@ -791,9 +866,7 @@ def solve_gcs_traj_opt_async(
     vel_limits: np.ndarray,
     acc_limits: np.ndarray,
     result_dict: dict,
-    duration_cost: float = 1.0,
-    path_length_cost: float = 1.0,
-    visualize_solving: bool = False,
+    compute_iris: bool = False,
 ):
     """
     Wrapper for solve_gcs_traj_opt to be used in a background thread.
@@ -804,9 +877,7 @@ def solve_gcs_traj_opt_async(
         q2=q2,
         vel_limits=vel_limits,
         acc_limits=acc_limits,
-        duration_cost=duration_cost,
-        path_length_cost=path_length_cost,
-        visualize_solving=visualize_solving,
+        compute_iris=compute_iris,
     )
 
     result_dict["trajectory"] = trajectory

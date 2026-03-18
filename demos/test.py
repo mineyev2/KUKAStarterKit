@@ -29,6 +29,7 @@ from pydrake.all import (
     DiagramBuilder,
     FrameIndex,
     GraphOfConvexSetsOptions,
+    LoadIrisRegionsYamlFile,
     LogVectorOutput,
     MeshcatVisualizer,
     PiecewisePolynomial,
@@ -98,7 +99,10 @@ class State(Enum):
 
 
 def main(
-    use_hardware: bool, no_cam: bool = False, show_sew_planes: bool = False
+    use_hardware: bool,
+    no_cam: bool = False,
+    show_sew_planes: bool = False,
+    compute_iris: bool = False,
 ) -> None:
     # Load configuration
     cfg = get_config(use_hardware)
@@ -301,7 +305,10 @@ def main(
     station_context = station.GetMyContextFromRoot(simulator.get_context())
     simulator.AdvanceTo(simulator.get_context().get_time() + 0.01)
 
-    regions = compute_iris_regions(station)
+    if compute_iris:
+        iris_regions = compute_iris_regions(station)
+    else:
+        iris_regions = LoadIrisRegionsYamlFile("iris_regions.yaml")
 
 
 if __name__ == "__main__":
@@ -323,9 +330,16 @@ if __name__ == "__main__":
         help="Show SEW and Reference planes in Meshcat.",
     )
 
+    parser.add_argument(
+        "--compute_iris",
+        action="store_true",
+        help="Whether to compute IRIS regions in configuration space.",
+    )
+
     args = parser.parse_args()
     main(
         use_hardware=args.use_hardware,
         no_cam=args.no_cam,
         show_sew_planes=args.show_sew_planes,
+        compute_iris=args.compute_iris,
     )
