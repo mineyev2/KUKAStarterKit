@@ -3,11 +3,13 @@ import argparse
 import queue
 import threading
 
+from datetime import datetime
+
 import matplotlib
 
-matplotlib.use("Agg")
+from utils.states import State
 
-from enum import Enum, auto
+matplotlib.use("Agg")
 from pathlib import Path
 
 import cv2
@@ -45,8 +47,10 @@ from utils.planning import (
     compute_hemisphere_traj_async,
     compute_optical_axis_traj_async,
     generate_hemisphere_waypoints,
+    move_along_trajectory,
     plot_configs_in_meshcat,
     plot_trajectory_in_meshcat,
+    wait_for_trajectory_plan,
 )
 from utils.plotting import plot_hemisphere_waypoints
 from utils.sew_stereo import (
@@ -54,22 +58,6 @@ from utils.sew_stereo import (
     compute_sew_and_ref_matrices,
     get_sew_joint_positions,
 )
-
-
-class State(Enum):
-    IDLE = auto()
-    WAITING_FOR_NEXT_SCAN = auto()
-    PLANNING_MOVE_TO_START = auto()
-    COMPUTING_MOVE_TO_START = auto()
-    MOVING_TO_START = auto()
-    MOVING_ALONG_HEMISPHERE = auto()
-    MOVING_DOWN_OPTICAL_AXIS = auto()
-    PLANNING_ALONG_ALTERNATE_PATH = auto()
-    COMPUTING_ALONG_ALTERNATE_PATH = auto()
-    MOVING_ALONG_ALTERNATE_PATH = auto()
-    COMPUTING_IKS = auto()
-    PAUSE = auto()
-    DONE = auto()
 
 
 def main(
@@ -137,7 +125,7 @@ def main(
             0.36,
         ]
     )
-    hemisphere_radius = 0.100
+    hemisphere_radius = 0.08
     hemisphere_axis = np.array(
         [-np.cos(hemisphere_angle), -np.sin(hemisphere_angle), 0]
     )
@@ -148,6 +136,9 @@ def main(
     num_pictures = 30  # Default is 30
     elbow_angle = np.deg2rad(135)
     scan_idx = 1  # Default is 1
+    # default_position = np.array([hemisphere_angle, 0.1, 0, -1.2, 0, 1.6, 0])
+    default_position = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])
+    prescan_q = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])
 
     vel_limits = np.full(7, 1.0)  # rad/s
     acc_limits = np.full(7, 1.0)  # rad/s^2
@@ -180,6 +171,12 @@ def main(
     if optical_axis_paths_dir.exists():
         shutil.rmtree(optical_axis_paths_dir)
         print(colored(f"✓ Cleared {optical_axis_paths_dir}", "grey"))
+
+    # Output directory of images
+    date_and_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    scans_base = (
+        Path(__file__).parent.parent / "microscope-data" / "scans" / date_and_time_str
+    )
 
     # ==================================================================
     # Waypoint Generation
@@ -234,7 +231,6 @@ def main(
         station.GetOutputPort("iiwa.position_measured"), state_logger.get_input_port()
     )
 
-    default_position = np.array([hemisphere_angle, 0.1, 0, -1.2, 0, 1.6, 0])
     # use ik solution of scan_idx as default posiiton
     # q = kinematics_solver.IK_for_microscope(
     #     hemisphere_waypoints[scan_idx].rotation().matrix(),
@@ -276,8 +272,8 @@ def main(
     simulator.set_target_realtime_rate(1.0)
 
     station.internal_meshcat.AddButton("Stop Simulation")
-    station.internal_meshcat.AddButton("Plan Move to Start")
-    station.internal_meshcat.AddButton("Move to Start")
+    station.internal_meshcat.AddButton("Move to Pre-Scan")
+    station.internal_meshcat.AddButton("Move to Scan")
     station.internal_meshcat.AddButton("Execute Trajectory")
 
     # Add joint position sliders (in degrees for readability)
@@ -334,7 +330,13 @@ def main(
         "trajectory": None,
         "trajectory_start_time": None,
     }
-    move_to_start_gcs_result = {
+    move_to_prescan_result = {
+        "ready": False,
+        "success": False,
+        "trajectory": None,
+        "guess_qs": None,
+    }
+    move_to_start_result = {
         "ready": False,
         "success": False,
         "trajectory": None,
@@ -498,7 +500,105 @@ def main(
         # ------------------------------------------------------------------
 
         if state == State.IDLE:
-            if station.internal_meshcat.GetButtonClicks("Plan Move to Start") > 0:
+            if station.internal_meshcat.GetButtonClicks("Move to Pre-Scan") > 0:
+                print(colored("Planning move to start (async)", "cyan"))
+
+                station_context = station.GetMyContextFromRoot(simulator.get_context())
+                q_initial = station.GetOutputPort("iiwa.position_measured").Eval(
+                    station_context
+                )
+
+                # target_pose = hemisphere_waypoints[scan_idx - 1]
+                # target_rot = target_pose.rotation().matrix()
+                # target_pos = target_pose.translation()
+
+                # Q = kinematics_solver.IK_for_microscope(
+                #     target_rot, target_pos, psi=elbow_angle
+                # )
+
+                # # Step 2) Find IK closest to current joint values
+                # q_curr = station.GetOutputPort("iiwa.position_measured").Eval(
+                #     station_context
+                # )
+                # q_des = kinematics_solver.find_closest_solution(Q, q_curr)
+
+                q_des = prescan_q
+
+                # Start background thread for kinematic trajectory planning
+                move_to_prescan_result["ready"] = False
+                move_to_prescan_thread = threading.Thread(
+                    target=solve_kinematic_traj_opt_async,
+                    args=(
+                        station,
+                        q_initial,
+                        q_initial,
+                        q_des,
+                        vel_limits,
+                        acc_limits,
+                        move_to_prescan_result,
+                        # (0.5, 10.0),
+                        # 10,
+                        # 1.0,
+                        # 1.0,
+                        # True,  # visualize_solving
+                    ),
+                    daemon=True,
+                )
+                move_to_prescan_thread.start()
+                state = State.COMPUTING_MOVE_TO_PRESCAN
+
+        elif state == State.COMPUTING_MOVE_TO_PRESCAN:
+            # if move_to_prescan_result["ready"]:
+            #     if move_to_prescan_result["success"]:
+            #         prescan_trajectory = move_to_prescan_result["trajectory"]
+
+            #         plot_configs_in_meshcat(
+            #             station,
+            #             move_to_prescan_result["guess_qs"],
+            #             name="guess_traj",
+            #         )
+
+            #         plot_trajectory_in_meshcat(
+            #             station,
+            #             prescan_trajectory,
+            #             name="final_traj",
+            #         )
+
+            #         print(
+            #             colored(
+            #                 "✓ GCS planning for start move complete. Moving now...",
+            #                 "green",
+            #             )
+            #         )
+
+            #         state = State.MOVING_TO_PRESCAN
+            #     else:
+            #         print(colored("❌ GCS planning failed!", "red"))
+            #         state = State.IDLE
+            ready = wait_for_trajectory_plan(move_to_prescan_result, station)
+
+            if ready:
+                trajectory_start_time = simulator.get_context().get_time()
+                state = State.MOVING_TO_PRESCAN
+
+        elif state == State.MOVING_TO_PRESCAN:
+            traj_complete = move_along_trajectory(
+                move_to_prescan_result["trajectory"],
+                trajectory_start_time,
+                simulator,
+                station,
+            )
+
+            if traj_complete:
+                print(colored("✓ Trajectory execution complete!", "green"))
+                if scan_idx >= len(hemisphere_waypoints):
+                    print(colored("✓ All scans complete!", "green"))
+                    state = State.DONE
+                else:
+                    state = State.WAITING_TO_GO_TO_START
+
+        elif state == State.WAITING_TO_GO_TO_START:
+            if station.internal_meshcat.GetButtonClicks("Move to Scan") > 0:
                 print(colored("Planning move to start (async)", "cyan"))
 
                 station_context = station.GetMyContextFromRoot(simulator.get_context())
@@ -521,8 +621,8 @@ def main(
                 q_des = kinematics_solver.find_closest_solution(Q, q_curr)
 
                 # Start background thread for kinematic trajectory planning
-                move_to_start_gcs_result["ready"] = False
-                move_to_start_gcs_thread = threading.Thread(
+                move_to_start_result["ready"] = False
+                move_to_start_thread = threading.Thread(
                     target=solve_kinematic_traj_opt_async,
                     args=(
                         station,
@@ -531,7 +631,7 @@ def main(
                         q_des,
                         vel_limits,
                         acc_limits,
-                        move_to_start_gcs_result,
+                        move_to_start_result,
                         # (0.5, 10.0),
                         # 10,
                         # 1.0,
@@ -540,47 +640,28 @@ def main(
                     ),
                     daemon=True,
                 )
-                move_to_start_gcs_thread.start()
+                move_to_start_thread.start()
                 state = State.COMPUTING_MOVE_TO_START
 
-                # Test IRIS
-                # regions = compute_iris_regions(station)
-
         elif state == State.COMPUTING_MOVE_TO_START:
-            if move_to_start_gcs_result["ready"]:
-                if move_to_start_gcs_result["success"]:
-                    initial_trajectory = move_to_start_gcs_result["trajectory"]
+            ready = wait_for_trajectory_plan(move_to_start_result, station)
 
-                    plot_configs_in_meshcat(
-                        station,
-                        move_to_start_gcs_result["guess_qs"],
-                        name="guess_traj",
-                    )
+            if ready:
+                trajectory_start_time = simulator.get_context().get_time()
+                state = State.MOVING_TO_START
 
-                    plot_trajectory_in_meshcat(
-                        station,
-                        initial_trajectory,
-                        name="final_traj",
-                    )
+        elif state == State.MOVING_TO_START:
+            traj_complete = move_along_trajectory(
+                move_to_start_result["trajectory"],
+                trajectory_start_time,
+                simulator,
+                station,
+            )
 
-                    print(
-                        colored(
-                            "✓ GCS planning for start move complete. Moving now...",
-                            "green",
-                        )
-                    )
-                    trajectory_start_time = simulator.get_context().get_time()
-                    state = State.PLANNING_MOVE_TO_START
-                else:
-                    print(colored("❌ GCS planning failed!", "red"))
-                    state = State.IDLE
+            if traj_complete:
+                print(colored("✓ Trajectory execution complete!", "green"))
+                state = State.WAITING_FOR_NEXT_SCAN
 
-        elif state == State.PLANNING_MOVE_TO_START:
-            if station.internal_meshcat.GetButtonClicks("Move to Start") <= 0:
-                continue
-
-            trajectory_start_time = simulator.get_context().get_time()
-            state = State.MOVING_TO_START
         elif state == State.WAITING_FOR_NEXT_SCAN:
             # if (
             #     station.internal_meshcat.GetButtonClicks("Execute Trajectory")
@@ -721,8 +802,7 @@ def main(
                 # ----------------------------------------------------------
                 optical_halfway_time = optical_axis_trajectory.end_time() / 2.0
 
-                # Create per-scan output folder: outputs/scans/scan<NN>/
-                scans_base = Path(__file__).parent.parent / "outputs" / "scans"
+                # Create folder for current scan
                 scan_frame_dir = scans_base / f"scan{scan_idx:02d}"
                 scan_frame_dir.mkdir(parents=True, exist_ok=True)
                 midpoint_pose_saved = False
@@ -741,13 +821,7 @@ def main(
                 is_pausing_for_capture = False
                 pause_start_sim_time = 0.0
                 hold_traj_time = 0.0
-                print(
-                    colored(
-                        f"✓ Stop-and-shoot: {num_pictures} stops at "
-                        f"{np.round(capture_traj_times, 2).tolist()}",
-                        "cyan",
-                    )
-                )
+                print(colored(f"✓ Stop-and-shoot: {num_pictures} stops", "cyan"))
 
                 scan_idx += 1
 
@@ -848,26 +922,6 @@ def main(
                 print(colored("✓ Trajectory execution complete!", "green"))
                 scan_idx += 1  # Since we didn't increment at State.COMPUTING_IKS
                 state = State.WAITING_FOR_NEXT_SCAN
-
-        elif state == State.MOVING_TO_START:
-            current_time = simulator.get_context().get_time()
-            traj_time = current_time - trajectory_start_time
-
-            if traj_time <= initial_trajectory.end_time():
-                q_desired = initial_trajectory.value(traj_time)
-                station_context = station.GetMyMutableContextFromRoot(
-                    simulator.get_mutable_context()
-                )
-                station.GetInputPort("iiwa.position").FixValue(
-                    station_context, q_desired
-                )
-            else:
-                print(colored("✓ Trajectory execution complete!", "green"))
-                if scan_idx >= len(hemisphere_waypoints):
-                    print(colored("✓ All scans complete!", "green"))
-                    state = State.DONE
-                else:
-                    state = State.WAITING_FOR_NEXT_SCAN
 
         elif state == State.MOVING_ALONG_HEMISPHERE:
             current_time = simulator.get_context().get_time()
@@ -1066,8 +1120,8 @@ def main(
         simulator.AdvanceTo(simulator.get_context().get_time() + 0.01)
 
     station.internal_meshcat.DeleteButton("Stop Simulation")
-    station.internal_meshcat.DeleteButton("Plan Move to Start")
-    station.internal_meshcat.DeleteButton("Move to Start")
+    station.internal_meshcat.DeleteButton("Move to Pre-Scan")
+    station.internal_meshcat.DeleteButton("Move to Scan")
     station.internal_meshcat.DeleteButton("Execute Trajectory")
 
     # Delete joint sliders

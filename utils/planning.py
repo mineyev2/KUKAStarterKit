@@ -31,6 +31,7 @@ from iiwa_setup.motion_planning.toppra import reparameterize_with_toppra
 from utils.iris import compute_iris_regions
 from utils.plotting import plot_hemisphere_trajectory, plot_optical_axis_trajectory
 from utils.safety import check_safety_constraints
+from utils.states import State
 
 
 def hemisphere_slerp(A, B, center, radius, speed_factor=1.0):
@@ -883,3 +884,71 @@ def solve_gcs_traj_opt_async(
     result_dict["trajectory"] = trajectory
     result_dict["success"] = success
     result_dict["ready"] = True
+
+
+def move_along_trajectory(traj, start_time, simulator, station):
+    # current_time = simulator.get_context().get_time()
+    # traj_time = current_time - trajectory_start_time
+
+    # if traj_time <= initial_trajectory.end_time():
+    #     q_desired = initial_trajectory.value(traj_time)
+    #     station_context = station.GetMyMutableContextFromRoot(
+    #         simulator.get_mutable_context()
+    #     )
+    #     station.GetInputPort("iiwa.position").FixValue(
+    #         station_context, q_desired
+    #     )
+    # else:
+    #     print(colored("✓ Trajectory execution complete!", "green"))
+    #     if scan_idx >= len(hemisphere_waypoints):
+    #         print(colored("✓ All scans complete!", "green"))
+    #         state = State.DONE
+    #     else:
+    #         state = State.WAITING_FOR_NEXT_SCAN
+
+    current_time = simulator.get_context().get_time()
+    traj_time = current_time - start_time
+    traj_complete = traj_time > traj.end_time()
+
+    if not traj_complete:
+        q_desired = traj.value(traj_time)
+        station_context = station.GetMyMutableContextFromRoot(
+            simulator.get_mutable_context()
+        )
+        station.GetInputPort("iiwa.position").FixValue(station_context, q_desired)
+    else:
+        print(colored("✓ Trajectory execution complete!", "green"))
+
+    return traj_complete
+
+
+def wait_for_trajectory_plan(thread_dict, station):
+    """Wait for the background thread to finish computing the trajectory, then visualize it and update state."""
+
+    if thread_dict["ready"]:
+        if thread_dict["success"]:
+            prescan_trajectory = thread_dict["trajectory"]
+
+            plot_configs_in_meshcat(
+                station,
+                thread_dict["guess_qs"],
+                name="guess_traj",
+            )
+
+            plot_trajectory_in_meshcat(
+                station,
+                prescan_trajectory,
+                name="final_traj",
+            )
+
+            print(
+                colored(
+                    "✓ GCS planning for start move complete. Moving now...",
+                    "green",
+                )
+            )
+        else:
+            print(colored("❌ GCS planning failed!", "red"))
+            quit()
+
+    return thread_dict["ready"] and thread_dict["success"]
