@@ -338,7 +338,7 @@ def main(
         "trajectory": None,
         "guess_qs": None,
     }
-    alternate_gcs_result = {
+    alternate_traj_result = {
         "ready": False,
         "success": False,
         "trajectory": None,
@@ -835,8 +835,8 @@ def main(
             q_des = kinematics_solver.find_closest_solution(Q, q_initial)
 
             # Start background thread for kinematic trajectory planning
-            alternate_gcs_result["ready"] = False
-            alternate_gcs_thread = threading.Thread(
+            alternate_traj_result["ready"] = False
+            alternate_traj_thread = threading.Thread(
                 target=solve_kinematic_traj_opt_async,
                 args=(
                     station,
@@ -845,24 +845,24 @@ def main(
                     q_des,
                     vel_limits,
                     acc_limits,
-                    alternate_gcs_result,
+                    alternate_traj_result,
                     True,
                 ),
                 daemon=True,
             )
-            alternate_gcs_thread.start()
+            alternate_traj_thread.start()
             state = State.COMPUTING_ALONG_ALTERNATE_PATH
 
         elif state == State.COMPUTING_ALONG_ALTERNATE_PATH:
-            if alternate_gcs_result["ready"]:
+            if alternate_traj_result["ready"]:
                 plot_configs_in_meshcat(
                     station,
-                    alternate_gcs_result["guess_qs"],
+                    alternate_traj_result["guess_qs"],
                     name="guess_traj",
                 )
 
-                if alternate_gcs_result["success"]:
-                    traj_to_next_scan = alternate_gcs_result["trajectory"]
+                if alternate_traj_result["success"]:
+                    traj_to_next_scan = alternate_traj_result["trajectory"]
 
                     plot_trajectory_in_meshcat(
                         station,

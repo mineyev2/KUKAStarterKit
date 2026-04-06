@@ -27,7 +27,11 @@ from termcolor import colored
 
 from iiwa_setup.iiwa import IiwaHardwareStationDiagram
 from iiwa_setup.util.traj_planning import solve_kinematic_traj_opt_async
-from utils.planning import move_along_trajectory, plot_trajectory_in_meshcat
+from utils.planning import (
+    move_along_trajectory,
+    plot_configs_in_meshcat,
+    plot_trajectory_in_meshcat,
+)
 
 
 class State(Enum):
@@ -118,6 +122,8 @@ def main():
     vel_limits = np.full(7, 1.0)  # rad/s
     acc_limits = np.full(7, 1.0)  # rad/s^2
 
+    q_initial = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])
+
     builder = DiagramBuilder()
     scenario = LoadScenario(data=scenario_data)
 
@@ -161,13 +167,13 @@ def main():
     curr_solution_idx = start_idx  # index into q_solutions list
     trajectory_start_time = 0.0
 
-    gcs_result = {
+    traj_result = {
         "ready": False,
         "success": False,
         "trajectory": None,
         "guess_qs": None,
     }
-    gcs_thread = None
+    traj_thread = None
 
     num_next_clicks = 0
 
@@ -182,53 +188,58 @@ def main():
         simulator.AdvanceTo(simulator.get_context().get_time() + 0.05)
 
         if state == State.IDLE:
-            if meshcat.GetButtonClicks("Next Config") > num_next_clicks:
-                num_next_clicks += 1
-                next_idx = curr_solution_idx + 1
+            if not meshcat.GetButtonClicks("Next Config") > num_next_clicks:
+                continue
 
-                if next_idx >= len(q_solutions):
-                    print(colored("✓ All configs visited.", "green"))
-                    state = State.DONE
-                    continue
+            num_next_clicks += 1
+            next_idx = curr_solution_idx + 1
 
-                row_idx, q_target = q_solutions[next_idx]
-                station_context = station.GetMyContextFromRoot(simulator.get_context())
-                q_current = station.GetOutputPort("iiwa.position_measured").Eval(
-                    station_context
+            if next_idx >= len(q_solutions):
+                print(colored("✓ All configs visited.", "green"))
+                state = State.DONE
+                continue
+
+            row_idx, q_target = q_solutions[next_idx]
+            station_context = station.GetMyContextFromRoot(simulator.get_context())
+            q_current = station.GetOutputPort("iiwa.position_measured").Eval(
+                station_context
+            )
+            # _, q_current_safe = q_solutions[curr_solution_idx]
+
+            print(
+                colored(
+                    f"\nPlanning: solution {curr_solution_idx} → {next_idx} (row {row_idx})",
+                    "cyan",
                 )
-                _, q_current_safe = q_solutions[curr_solution_idx]
+            )
+            print(f"  target q (deg): {np.rad2deg(q_target).round(2)}")
 
-                print(
-                    colored(
-                        f"\nPlanning: solution {curr_solution_idx} → {next_idx} (row {row_idx})",
-                        "cyan",
-                    )
-                )
-                print(f"  target q (deg): {np.rad2deg(q_target).round(2)}")
-
-                gcs_result["ready"] = False
-                gcs_result["success"] = False
-                gcs_thread = threading.Thread(
-                    target=solve_kinematic_traj_opt_async,
-                    args=(
-                        station,
-                        q_current,
-                        q_current_safe,
-                        q_target,
-                        vel_limits,
-                        acc_limits,
-                        gcs_result,
-                    ),
-                    daemon=True,
-                )
-                gcs_thread.start()
-                state = State.COMPUTING_PATH
+            traj_result["ready"] = False
+            traj_result["success"] = False
+            traj_thread = threading.Thread(
+                target=solve_kinematic_traj_opt_async,
+                args=(
+                    station,
+                    q_current,
+                    q_initial,
+                    q_target,
+                    vel_limits,
+                    acc_limits,
+                    traj_result,
+                ),
+                daemon=True,
+            )
+            traj_thread.start()
+            state = State.COMPUTING_PATH
 
         elif state == State.COMPUTING_PATH:
-            if gcs_result["ready"]:
-                if gcs_result["success"]:
+            if traj_result["ready"]:
+                plot_configs_in_meshcat(
+                    station, traj_result["guess_qs"], name="guess_traj"
+                )
+                if traj_result["success"]:
                     plot_trajectory_in_meshcat(
-                        station, gcs_result["trajectory"], name="replay_traj"
+                        station, traj_result["trajectory"], name="replay_traj"
                     )
                     trajectory_start_time = simulator.get_context().get_time()
                     state = State.MOVING
@@ -242,12 +253,13 @@ def main():
                             "yellow",
                         )
                     )
-                    curr_solution_idx = next_idx  # skip it, curr_idx doesn't update
-                    state = State.IDLE
+                    quit()
+                    # curr_solution_idx = next_idx  # skip it, curr_idx doesn't update
+                    # state = State.IDLE
 
         elif state == State.MOVING:
             traj_complete = move_along_trajectory(
-                gcs_result["trajectory"],
+                traj_result["trajectory"],
                 trajectory_start_time,
                 simulator,
                 station,
