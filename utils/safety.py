@@ -54,17 +54,17 @@ def check_joint_limits(trajectory_joint_poses, joint_lower_limits, joint_upper_l
 
     if not is_valid:
         print(colored(f"⚠ Found {len(violations)} joint limit violations:", "yellow"))
-        for v in violations[:5]:  # Show first 5 violations
-            print(
-                colored(
-                    f"  Joint {v['joint_idx']+1}, waypoint {v['waypoint_idx']}: "
-                    f"{np.rad2deg(v['value']):.2f}° violates {v['limit_type']} limit "
-                    f"{np.rad2deg(v['limit_value']):.2f}° by {np.rad2deg(v['violation_amount']):.2f}°",
-                    "yellow",
-                )
-            )
-        if len(violations) > 5:
-            print(colored(f"  ... and {len(violations) - 5} more violations", "yellow"))
+    #     for v in violations[:5]:  # Show first 5 violations
+    #         print(
+    #             colored(
+    #                 f"  Joint {v['joint_idx']+1}, waypoint {v['waypoint_idx']}: "
+    #                 f"{np.rad2deg(v['value']):.2f}° violates {v['limit_type']} limit "
+    #                 f"{np.rad2deg(v['limit_value']):.2f}° by {np.rad2deg(v['violation_amount']):.2f}°",
+    #                 "yellow",
+    #             )
+    #         )
+    #     if len(violations) > 5:
+    #         print(colored(f"  ... and {len(violations) - 5} more violations", "yellow"))
 
     return is_valid, violations
 
@@ -251,3 +251,81 @@ def check_safety_constraints(
     }
 
     return is_valid, violations
+
+
+def check_tip_position(station, q, target_pos, position_tolerance=1e-3):
+    """
+    Check if FK on the microscope tip matches target_pos.
+
+    Args:
+        station: IiwaHardwareStationDiagram instance
+        q: (7,) array of joint positions
+        target_pos: (3,) target position
+        position_tolerance: max allowed position error in meters
+
+    Returns:
+        matches: bool
+        position_error: float, Euclidean distance in meters
+    """
+    plant = station.get_internal_plant()
+    plant_context = plant.CreateDefaultContext()
+    plant.SetPositions(plant_context, q)
+    achieved_pos = (
+        plant.GetFrameByName("microscope_tip_link")
+        .CalcPoseInWorld(plant_context)
+        .translation()
+    )
+    position_error = np.linalg.norm(achieved_pos - target_pos)
+    matches = position_error <= position_tolerance
+    return matches, position_error
+
+
+def filter_ik_solutions(
+    station,
+    Q,
+    target_rot,
+    target_pos,
+    joint_lower_limits,
+    joint_upper_limits,
+):
+    """
+    Filter IK solutions based on safety constraints.
+
+    Args:
+        station: IiwaHardwareStationDiagram instance
+        Q: list of (7,) arrays of IK solutions for a single waypoint
+        time_array: (N,) array of time values for the trajectory
+        joint_lower_limits: (7,) array of lower joint limits
+        joint_upper_limits: (7,) array of upper joint limits
+        max_joint_velocities: (7,) array of maximum allowed joint velocities (absolute value)
+
+    Returns:
+        valid_solutions: list of (7,) arrays that satisfy all safety constraints
+        violations_info: dict containing violation info for each solution
+    """
+    valid_solutions = np.empty((0, 7))  # Start with empty array of shape (0, 7)
+
+    for q in Q:
+        trajectory_joint_poses = q.reshape(7, 1)  # Single waypoint trajectory
+
+        is_valid_joints, violations_joints = check_joint_limits(
+            trajectory_joint_poses, joint_lower_limits, joint_upper_limits
+        )
+
+        is_valid_collisions, violations_collisions = check_collisions(
+            station, trajectory_joint_poses
+        )
+
+        matches_pos, position_error = check_tip_position(station, q, target_pos)
+
+        # if matches_pos:
+        #     print(colored(f"  ✓ pos error: {position_error:.6f} m", "green"))
+        # else:
+        #     print(colored(f"  ✗ pos error: {position_error:.6f} m", "red"))
+
+        if is_valid_joints and is_valid_collisions and matches_pos:
+            valid_solutions = np.vstack(
+                (valid_solutions, q.reshape(1, 7))
+            )  # Append valid solution
+
+    return valid_solutions

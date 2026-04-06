@@ -108,7 +108,7 @@ def add_floor(plant):
     )
 
 
-def add_wall(plant, X_WF=None):
+def add_wall(plant, wall_width=3.0, X_WF=None):
     if not hasattr(add_wall, "counter"):
         add_wall.counter = 0
 
@@ -117,7 +117,8 @@ def add_wall(plant, X_WF=None):
     friction = CoulombFriction(static_friction=0.9, dynamic_friction=0.8)
     wall_thickness = 0.01
     wall_height = 1.5
-    wall_size = Box(wall_thickness, 3.0, wall_height)
+
+    wall_size = Box(wall_thickness, wall_width, wall_height)
 
     if X_WF is None:
         X_WF = RigidTransform([-0.3 - wall_thickness / 2, 0, wall_height / 2])

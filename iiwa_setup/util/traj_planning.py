@@ -249,16 +249,16 @@ def setup_trajectory_optimization_from_q1_to_q2(
         station.internal_station.get_optimization_plant_context()
     )
 
-    # collision_constraint = MinimumDistanceLowerBoundConstraint(
-    #     optimization_plant,
-    #     minimum_distance,
-    #     optimization_plant_context,
-    #     None,
-    # )
+    collision_constraint = MinimumDistanceLowerBoundConstraint(
+        optimization_plant,
+        minimum_distance,
+        optimization_plant_context,
+        None,
+    )
 
-    # evaluate_at_s = np.linspace(0, 1, num_samples)
-    # for s in evaluate_at_s:
-    #     trajopt.AddPathPositionConstraint(collision_constraint, s)
+    evaluate_at_s = np.linspace(0, 1, num_samples)
+    for s in evaluate_at_s:
+        trajopt.AddPathPositionConstraint(collision_constraint, s)
 
     return trajopt, prog, guess_qs
 

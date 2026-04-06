@@ -7,6 +7,7 @@ from datetime import datetime
 
 import matplotlib
 
+from utils.safety import filter_ik_solutions
 from utils.states import State
 
 matplotlib.use("Agg")
@@ -64,6 +65,7 @@ def main(
     use_hardware: bool,
     no_cam: bool = False,
     show_sew_planes: bool = False,
+    skip_opt: bool = False,
 ) -> None:
     # Load configuration
     cfg = get_config(use_hardware)
@@ -131,11 +133,13 @@ def main(
     )
 
     num_scan_points = 50
-    coverage = 0.40  # Fraction of hemisphere to cover
+    coverage = 1.0  # Fraction of hemisphere to cover
     distance_along_optical_axis = 0.025
     num_pictures = 30  # Default is 30
     elbow_angle = np.deg2rad(135)
     scan_idx = 1  # Default is 1
+    curr_idx = scan_idx - 1
+    final_scan_idx = 40
     # default_position = np.array([hemisphere_angle, 0.1, 0, -1.2, 0, 1.6, 0])
     default_position = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])
     prescan_q = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])
@@ -231,14 +235,6 @@ def main(
         station.GetOutputPort("iiwa.position_measured"), state_logger.get_input_port()
     )
 
-    # use ik solution of scan_idx as default posiiton
-    # q = kinematics_solver.IK_for_microscope(
-    #     hemisphere_waypoints[scan_idx].rotation().matrix(),
-    #     hemisphere_waypoints[scan_idx].translation(),
-    #     psi=elbow_angle,
-    # )[0]
-
-    # default_position = q
     dummy = builder.AddSystem(ConstantVectorSource(default_position))
     builder.Connect(
         dummy.get_output_port(),
@@ -507,21 +503,6 @@ def main(
                 q_initial = station.GetOutputPort("iiwa.position_measured").Eval(
                     station_context
                 )
-
-                # target_pose = hemisphere_waypoints[scan_idx - 1]
-                # target_rot = target_pose.rotation().matrix()
-                # target_pos = target_pose.translation()
-
-                # Q = kinematics_solver.IK_for_microscope(
-                #     target_rot, target_pos, psi=elbow_angle
-                # )
-
-                # # Step 2) Find IK closest to current joint values
-                # q_curr = station.GetOutputPort("iiwa.position_measured").Eval(
-                #     station_context
-                # )
-                # q_des = kinematics_solver.find_closest_solution(Q, q_curr)
-
                 q_des = prescan_q
 
                 # Start background thread for kinematic trajectory planning
@@ -536,11 +517,6 @@ def main(
                         vel_limits,
                         acc_limits,
                         move_to_prescan_result,
-                        # (0.5, 10.0),
-                        # 10,
-                        # 1.0,
-                        # 1.0,
-                        # True,  # visualize_solving
                     ),
                     daemon=True,
                 )
@@ -548,33 +524,6 @@ def main(
                 state = State.COMPUTING_MOVE_TO_PRESCAN
 
         elif state == State.COMPUTING_MOVE_TO_PRESCAN:
-            # if move_to_prescan_result["ready"]:
-            #     if move_to_prescan_result["success"]:
-            #         prescan_trajectory = move_to_prescan_result["trajectory"]
-
-            #         plot_configs_in_meshcat(
-            #             station,
-            #             move_to_prescan_result["guess_qs"],
-            #             name="guess_traj",
-            #         )
-
-            #         plot_trajectory_in_meshcat(
-            #             station,
-            #             prescan_trajectory,
-            #             name="final_traj",
-            #         )
-
-            #         print(
-            #             colored(
-            #                 "✓ GCS planning for start move complete. Moving now...",
-            #                 "green",
-            #             )
-            #         )
-
-            #         state = State.MOVING_TO_PRESCAN
-            #     else:
-            #         print(colored("❌ GCS planning failed!", "red"))
-            #         state = State.IDLE
             ready = wait_for_trajectory_plan(move_to_prescan_result, station)
 
             if ready:
@@ -591,7 +540,7 @@ def main(
 
             if traj_complete:
                 print(colored("✓ Trajectory execution complete!", "green"))
-                if scan_idx >= len(hemisphere_waypoints):
+                if scan_idx >= final_scan_idx:
                     print(colored("✓ All scans complete!", "green"))
                     state = State.DONE
                 else:
@@ -606,7 +555,7 @@ def main(
                     station_context
                 )
 
-                target_pose = hemisphere_waypoints[scan_idx - 1]
+                target_pose = hemisphere_waypoints[curr_idx]
                 target_rot = target_pose.rotation().matrix()
                 target_pos = target_pose.translation()
 
@@ -676,7 +625,7 @@ def main(
 
             print(colored(f"Preparing trajectory for scan #{scan_idx}", "grey"))
 
-            pose_curr = hemisphere_waypoints[scan_idx - 1]  # We assume scan_idx >= 1
+            pose_curr = hemisphere_waypoints[curr_idx]
             pose_target = hemisphere_waypoints[scan_idx]
 
             # # Visualize the target scan point as a triad for reference
@@ -728,33 +677,38 @@ def main(
             )
             hemisphere_ik_thread.start()
 
-            optical_axis_ik_result["ready"] = False
-            optical_axis_ik_thread = threading.Thread(
-                target=compute_optical_axis_traj_async,
-                args=(
-                    station,
-                    pose_curr,
-                    kinematics_solver,
-                    q_curr,
-                    elbow_angle,
-                    optical_axis_ik_result,
-                    True,  # plot_trajectories
-                    scan_idx,
-                    joint_lower_limits,
-                    joint_upper_limits,
-                    distance_along_optical_axis,
-                    speed_factor,
-                    max_joint_velocities,
-                ),
-                daemon=True,
-            )
-            optical_axis_ik_thread.start()
+            if not skip_opt:
+                optical_axis_ik_result["ready"] = False
+                optical_axis_ik_thread = threading.Thread(
+                    target=compute_optical_axis_traj_async,
+                    args=(
+                        station,
+                        pose_curr,
+                        kinematics_solver,
+                        q_curr,
+                        elbow_angle,
+                        optical_axis_ik_result,
+                        True,  # plot_trajectories
+                        scan_idx,
+                        joint_lower_limits,
+                        joint_upper_limits,
+                        distance_along_optical_axis,
+                        speed_factor,
+                        max_joint_velocities,
+                    ),
+                    daemon=True,
+                )
+                optical_axis_ik_thread.start()
+            else:
+                optical_axis_ik_result["ready"] = True
 
             state = State.COMPUTING_IKS
 
         elif state == State.COMPUTING_IKS:
             # Wait for IK computation to complete
-            if hemisphere_ik_result["ready"] and optical_axis_ik_result["ready"]:
+            if hemisphere_ik_result["ready"] and (
+                skip_opt or optical_axis_ik_result["ready"]
+            ):
                 if not hemisphere_ik_result["valid_joints"]:
                     print(
                         colored(
@@ -762,8 +716,6 @@ def main(
                             "yellow",
                         )
                     )
-                    # state = State.MOVING_DOWN_OPTICAL_AXIS
-                    # continue
 
                 if not hemisphere_ik_result["valid_velocities"]:
                     print(
@@ -772,10 +724,8 @@ def main(
                             "yellow",
                         )
                     )
-                    # state = State.MOVING_DOWN_OPTICAL_AXIS
-                    # continue
 
-                if not optical_axis_ik_result["valid_joints"]:
+                if not skip_opt and not optical_axis_ik_result["valid_joints"]:
                     print(
                         colored(
                             "❌ Invalid joint values in optical axis IK. Quitting program.",
@@ -784,49 +734,62 @@ def main(
                     )
                     break
 
-                if not optical_axis_ik_result["valid_velocities"]:
+                if not skip_opt and not optical_axis_ik_result["valid_velocities"]:
                     print(
                         colored("❌ Invalid joint velocities. Quitting program.", "red")
                     )
                     break
 
                 hemisphere_trajectory = hemisphere_ik_result["trajectory"]
-                optical_axis_trajectory = optical_axis_ik_result["trajectory"]
 
-                # Plotting already happened in the async functions (non-blocking)
+                if not skip_opt:
+                    optical_axis_trajectory = optical_axis_ik_result["trajectory"]
 
-                # ----------------------------------------------------------
-                # Compute the halfway point of the optical axis trajectory
-                # (the trajectory is mirrored: first half goes inward, second
-                # half goes outward). Photos are taken only on the inward pass.
-                # ----------------------------------------------------------
-                optical_halfway_time = optical_axis_trajectory.end_time() / 2.0
+                    # Plotting already happened in the async functions (non-blocking)
 
-                # Create folder for current scan
-                scan_frame_dir = scans_base / f"scan{scan_idx:02d}"
-                scan_frame_dir.mkdir(parents=True, exist_ok=True)
-                midpoint_pose_saved = False
-                print(colored(f"✓ Frame output dir: {scan_frame_dir}", "cyan"))
+                    # ----------------------------------------------------------
+                    # Compute the halfway point of the optical axis trajectory
+                    # (the trajectory is mirrored: first half goes inward, second
+                    # half goes outward). Photos are taken only on the inward pass.
+                    # ----------------------------------------------------------
+                    optical_halfway_time = optical_axis_trajectory.end_time() / 2.0
 
-                # ----------------------------------------------------------
-                # Build the stop-and-shoot schedule.
-                # num_pictures evenly-spaced stops on [0, optical_halfway_time];
-                # both endpoints (t=0 = start, t=halfway = deepest point) included.
-                # ----------------------------------------------------------
-                capture_traj_times = np.linspace(
-                    0.0, optical_halfway_time, num_pictures
-                )
-                next_capture_idx = 0
-                scan_frame_idx = 0
-                is_pausing_for_capture = False
-                pause_start_sim_time = 0.0
-                hold_traj_time = 0.0
-                print(colored(f"✓ Stop-and-shoot: {num_pictures} stops", "cyan"))
+                    # Create folder for current scan
+                    scan_frame_dir = scans_base / f"scan{scan_idx:02d}"
+                    scan_frame_dir.mkdir(parents=True, exist_ok=True)
+                    midpoint_pose_saved = False
+                    print(colored(f"✓ Frame output dir: {scan_frame_dir}", "cyan"))
+
+                    # ----------------------------------------------------------
+                    # Build the stop-and-shoot schedule.
+                    # num_pictures evenly-spaced stops on [0, optical_halfway_time];
+                    # both endpoints (t=0 = start, t=halfway = deepest point) included.
+                    # ----------------------------------------------------------
+                    capture_traj_times = np.linspace(
+                        0.0, optical_halfway_time, num_pictures
+                    )
+                    next_capture_idx = 0
+                    scan_frame_idx = 0
+                    is_pausing_for_capture = False
+                    pause_start_sim_time = 0.0
+                    hold_traj_time = 0.0
+                    print(colored(f"✓ Stop-and-shoot: {num_pictures} stops", "cyan"))
 
                 scan_idx += 1
 
-                state = State.MOVING_DOWN_OPTICAL_AXIS
-                trajectory_start_time = simulator.get_context().get_time()
+                if skip_opt:
+                    if (
+                        hemisphere_ik_result["valid_joints"]
+                        and hemisphere_ik_result["valid_velocities"]
+                    ):
+                        curr_idx = scan_idx - 1
+                        state = State.MOVING_ALONG_HEMISPHERE
+                    else:
+                        state = State.PLANNING_ALONG_ALTERNATE_PATH
+                    trajectory_start_time = simulator.get_context().get_time()
+                else:
+                    state = State.MOVING_DOWN_OPTICAL_AXIS
+                    trajectory_start_time = simulator.get_context().get_time()
                 print(
                     f"Simulator time when starting trajectory: {trajectory_start_time}"
                 )
@@ -847,6 +810,27 @@ def main(
             Q = kinematics_solver.IK_for_microscope(
                 target_rot, target_pos, psi=elbow_angle
             )
+
+            # Filter out invalid solutions
+            Q = filter_ik_solutions(
+                station,
+                Q,
+                target_rot,
+                target_pos,
+                joint_lower_limits,
+                joint_upper_limits,
+            )
+
+            if Q.shape[0] == 0:
+                print(
+                    colored(
+                        "❌ No valid IK solutions found for alternate path. Incrementing scan index to skip to next scan point",
+                        "yellow",
+                    )
+                )
+                scan_idx += 1
+                state = State.WAITING_FOR_NEXT_SCAN
+                continue
 
             q_des = kinematics_solver.find_closest_solution(Q, q_initial)
 
@@ -892,6 +876,7 @@ def main(
                             "green",
                         )
                     )
+                    curr_idx = scan_idx  # alternate path targets scan_idx (already incremented past failed point)
                     trajectory_start_time = simulator.get_context().get_time()
                     state = State.MOVING_ALONG_ALTERNATE_PATH
                 else:
@@ -1056,6 +1041,7 @@ def main(
                     hemisphere_ik_result["valid_joints"]
                     and hemisphere_ik_result["valid_velocities"]
                 ):
+                    curr_idx += 1
                     state = State.MOVING_ALONG_HEMISPHERE
                 else:
                     state = State.PLANNING_ALONG_ALTERNATE_PATH
@@ -1093,15 +1079,6 @@ def main(
                 pickle.dump(log_data, f)
             break
             # pass
-
-        # Update button counts
-        # num_move_to_top_clicks = station.internal_meshcat.GetButtonClicks(
-        #     "Move to Start"
-        # )
-
-        # num_compute_iks_clicks = station.internal_meshcat.GetButtonClicks(
-        #     "Compute IKs"
-        # )
 
         num_execute_traj_clicks = station.internal_meshcat.GetButtonClicks(
             "Execute Trajectory"
@@ -1159,10 +1136,18 @@ if __name__ == "__main__":
         action="store_true",
         help="Show SEW and Reference planes in Meshcat.",
     )
+    parser.add_argument(
+        "--skip_opt",
+        action="store_true",
+        help="Skip the optical axis trajectory (go directly to hemisphere movement).",
+    )
 
     args = parser.parse_args()
+    for arg, val in vars(args).items():
+        print(colored(f"  {arg}: {val}", "cyan"))
     main(
         use_hardware=args.use_hardware,
         no_cam=args.no_cam,
         show_sew_planes=args.show_sew_planes,
+        skip_opt=args.skip_opt,
     )

@@ -230,13 +230,15 @@ class InternalStationDiagram(Diagram):
         add_floor(self._plant)
         add_wall(self._plant)
 
-        hemisphere_wall_rot = RotationMatrix.MakeZRotation(self.hemisphere_angle)
-        add_wall(
-            self._plant,
-            X_WF=RigidTransform(
-                hemisphere_wall_rot, self.hemisphere_pos + np.array([0.0, 0.005, 0.0])
-            ),
-        )
+        # hemisphere_wall_rot = RotationMatrix.MakeZRotation(self.hemisphere_angle)
+        # wall_pos = [self.hemisphere_pos[0], self.hemisphere_pos[1], 0.75]
+        # add_wall(
+        #     self._plant,
+        #     wall_width=0.05,
+        #     X_WF=RigidTransform(
+        #         hemisphere_wall_rot, wall_pos + np.array([0.0, 0.005, 0.0])
+        #     ),
+        # )
 
         add_sphere(  # scanning sphere for visualization
             self._plant,
@@ -324,12 +326,13 @@ class InternalStationDiagram(Diagram):
         # Add other world geometry (e.g., floor, wall, etc.)
         add_floor(self._optimization_plant)
         add_wall(self._optimization_plant)
-        add_wall(
-            self._optimization_plant,
-            X_WF=RigidTransform(
-                hemisphere_wall_rot, self.hemisphere_pos + np.array([0.0, 0.005, 0.0])
-            ),
-        )
+        # add_wall(
+        #     self._optimization_plant,
+        #     wall_width=0.1,
+        #     X_WF=RigidTransform(
+        #         hemisphere_wall_rot, self.hemisphere_pos + np.array([0.0, 0.005, 0.0])
+        #     ),
+        # )
 
         # Add sphere to visualize scan points
         add_sphere(
