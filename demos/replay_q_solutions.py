@@ -23,6 +23,7 @@ from pydrake.all import (
     MeshcatVisualizer,
     Simulator,
 )
+from pydrake.geometry import Rgba
 from termcolor import colored
 
 from iiwa_setup.iiwa import IiwaHardwareStationDiagram
@@ -37,6 +38,7 @@ from utils.planning import (
 class State(Enum):
     IDLE = auto()
     COMPUTING_PATH = auto()
+    PREVIEW = auto()
     MOVING = auto()
     DONE = auto()
 
@@ -158,7 +160,14 @@ def main():
     # ==================================================================
     meshcat = station.internal_meshcat
     meshcat.AddButton("Next Config")
+    meshcat.AddButton("Show Initial Guess")
+    meshcat.AddButton("Play Solved Path")
     meshcat.AddButton("Stop")
+
+    joint_limits_deg = [170, 120, 170, 120, 170, 120, 175]
+    for i in range(7):
+        lim = joint_limits_deg[i]
+        meshcat.AddSlider(f"J{i+1} (deg)", -lim, lim, 0.1, 0.0)
 
     # ==================================================================
     # State machine
@@ -172,26 +181,60 @@ def main():
         "success": False,
         "trajectory": None,
         "guess_qs": None,
+        "initial_spline": None,
+        "solved_spline": None,
     }
     traj_thread = None
 
     num_next_clicks = 0
+    num_guess_clicks = 0
+    num_solved_clicks = 0
+    show_guess_mode = False  # True when triggered by "Show Initial Guess"
+    play_solved_mode = False  # True when triggered by "Play Solved Path"
 
     print(
         colored(f"\nReady. {len(q_solutions) - start_idx} configs remaining.", "cyan")
     )
-    print(
-        colored("Press 'Next Config' in Meshcat to step to the next solution.", "cyan")
-    )
+    print(colored("Press 'Next Config' or 'Show Initial Guess' in Meshcat.", "cyan"))
 
     while meshcat.GetButtonClicks("Stop") < 1:
         simulator.AdvanceTo(simulator.get_context().get_time() + 0.05)
 
+        station_context = station.GetMyContextFromRoot(simulator.get_context())
+        q_now = station.GetOutputPort("iiwa.position_measured").Eval(station_context)
+        for i, q in enumerate(q_now):
+            meshcat.SetSliderValue(f"J{i+1} (deg)", round(np.rad2deg(q), 1))
+
         if state == State.IDLE:
-            if not meshcat.GetButtonClicks("Next Config") > num_next_clicks:
+            next_clicked = meshcat.GetButtonClicks("Next Config") > num_next_clicks
+            guess_clicked = (
+                meshcat.GetButtonClicks("Show Initial Guess") > num_guess_clicks
+            )
+            solved_clicked = (
+                meshcat.GetButtonClicks("Play Solved Path") > num_solved_clicks
+            )
+
+            if not next_clicked and not guess_clicked and not solved_clicked:
                 continue
 
-            num_next_clicks += 1
+            # Delete old traj visuals
+            meshcat.Delete("initial_spline_traj")
+            meshcat.Delete("solved_spline_traj")
+            meshcat.Delete("replay_traj")
+
+            if next_clicked:
+                num_next_clicks += 1
+                show_guess_mode = False
+                play_solved_mode = False
+            elif guess_clicked:
+                num_guess_clicks += 1
+                show_guess_mode = True
+                play_solved_mode = False
+            else:
+                num_solved_clicks += 1
+                show_guess_mode = False
+                play_solved_mode = True
+
             next_idx = curr_solution_idx + 1
 
             if next_idx >= len(q_solutions):
@@ -200,7 +243,6 @@ def main():
                 continue
 
             row_idx, q_target = q_solutions[next_idx]
-            station_context = station.GetMyContextFromRoot(simulator.get_context())
             q_current = station.GetOutputPort("iiwa.position_measured").Eval(
                 station_context
             )
@@ -208,11 +250,19 @@ def main():
 
             print(
                 colored(
-                    f"\nPlanning: solution {curr_solution_idx} → {next_idx} (row {row_idx})",
+                    f"\n{'[Guess preview] ' if show_guess_mode else ''}Planning: solution {curr_solution_idx} → {next_idx} (row {row_idx})",
                     "cyan",
                 )
             )
             print(f"  target q (deg): {np.rad2deg(q_target).round(2)}")
+
+            # check_final_trajectory=False,  # We'll check for collisions separately after reparameterization
+            # duration_constraints: tuple[float, float] = (0.5, 10.0),
+            # num_control_points: int = 10,
+            # duration_cost: float = 1.0,
+            # path_length_cost: float = 1.0,
+            # num_samples: int = 25,
+            # minimum_distance: float = 0.001,
 
             traj_result["ready"] = False
             traj_result["success"] = False
@@ -226,6 +276,9 @@ def main():
                     vel_limits,
                     acc_limits,
                     traj_result,
+                    False,
+                    (0.5, 10.0),
+                    10,
                 ),
                 daemon=True,
             )
@@ -234,22 +287,81 @@ def main():
 
         elif state == State.COMPUTING_PATH:
             if traj_result["ready"]:
-                plot_configs_in_meshcat(
-                    station, traj_result["guess_qs"], name="guess_traj"
+                plot_trajectory_in_meshcat(
+                    station,
+                    traj_result["initial_spline"],
+                    name="initial_spline_traj",
+                    rgba=Rgba(1, 1, 0, 1),
                 )
-                if traj_result["success"]:
+                if show_guess_mode:
+                    spline = traj_result["initial_spline"]
+                    if spline is not None:
+                        ts = np.linspace(spline.start_time(), spline.end_time(), 50)
+                        qs = [spline.value(t).flatten() for t in ts]
+                        for q in qs + list(reversed(qs)):
+                            station.GetInputPort("iiwa.position").FixValue(
+                                station_context, q
+                            )
+                            simulator.AdvanceTo(
+                                simulator.get_context().get_time() + 0.1
+                            )
+                            for i, qi in enumerate(q):
+                                meshcat.SetSliderValue(
+                                    f"J{i+1} (deg)", round(np.rad2deg(qi), 1)
+                                )
+                    print(colored("✓ Guess preview done.", "cyan"))
+                    state = State.IDLE
+                elif play_solved_mode:
+                    spline = traj_result["solved_spline"]
+                    if spline is not None:
+                        plot_trajectory_in_meshcat(
+                            station,
+                            spline,
+                            name="solved_spline_traj",
+                            rgba=Rgba(0, 1, 1, 1),
+                        )
+                        ts = np.linspace(spline.start_time(), spline.end_time(), 50)
+                        qs = [spline.value(t).flatten() for t in ts]
+                        for q in qs + list(reversed(qs)):
+                            station.GetInputPort("iiwa.position").FixValue(
+                                station_context, q
+                            )
+                            simulator.AdvanceTo(
+                                simulator.get_context().get_time() + 0.1
+                            )
+                            for i, qi in enumerate(q):
+                                meshcat.SetSliderValue(
+                                    f"J{i+1} (deg)", round(np.rad2deg(qi), 1)
+                                )
+                    else:
+                        print(
+                            colored("❌ No solved spline available for preview!", "red")
+                        )
+                    print(colored("✓ Solved path preview done.", "cyan"))
+                    state = State.IDLE
+                elif traj_result["success"]:
+                    plot_trajectory_in_meshcat(
+                        station,
+                        traj_result["solved_spline"],
+                        name="solved_spline_traj",
+                        rgba=Rgba(0, 1, 1, 1),
+                    )
                     plot_trajectory_in_meshcat(
                         station, traj_result["trajectory"], name="replay_traj"
                     )
                     trajectory_start_time = simulator.get_context().get_time()
-                    state = State.MOVING
+                    print(
+                        f"traj start q: {np.rad2deg(traj_result['trajectory'].value(0).flatten()).round(1)}"
+                    )
+                    print(f"robot actual q: {np.rad2deg(q_current).round(1)}")
                     print(colored("✓ Path planned. Moving...", "green"))
+                    state = State.MOVING
                 else:
                     next_idx = curr_solution_idx + 1
                     _, q_target = q_solutions[next_idx]
                     print(
                         colored(
-                            f"❌ GCS planning failed for solution {next_idx} (row {q_solutions[next_idx][0]}). Skipping.",
+                            f"❌ Trajectory planning failed for solution {next_idx} (row {q_solutions[next_idx][0]}). Skipping.",
                             "yellow",
                         )
                     )

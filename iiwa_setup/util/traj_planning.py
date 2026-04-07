@@ -1,6 +1,7 @@
 import numpy as np
 
 from pydrake.all import (
+    BsplineTrajectory,
     GcsTrajectoryOptimization,
     KinematicTrajectoryOptimization,
     MinimumDistanceLowerBoundConstraint,
@@ -128,14 +129,15 @@ def resolve_with_toppra(
     print(f"Velocity limits: {vel_limits}")
     print(f"Acceleration limits: {acc_limits}")
 
-    trajectory = reparameterize_with_toppra(
+    trajectory, toppra_success = reparameterize_with_toppra(
         geometric_path,
         controller_plant,
         velocity_limits=vel_limits,
         acceleration_limits=acc_limits,
+        num_grid_points=100,
     )
 
-    return trajectory
+    return trajectory, toppra_success, geometric_path
 
 
 def resolve_gcs_with_toppra(
@@ -187,18 +189,18 @@ def setup_trajectory_optimization_from_q1_to_q2(
     prog = trajopt.get_mutable_prog()
 
     # ============= Costs =============
-    trajopt.AddDurationCost(duration_cost)
-    trajopt.AddPathLengthCost(path_length_cost)
+    # trajopt.AddDurationCost(duration_cost)
+    # trajopt.AddPathLengthCost(path_length_cost)
 
     # ============= Bounds =============
     trajopt.AddPositionBounds(
         optimization_plant.GetPositionLowerLimits().flatten(),
         optimization_plant.GetPositionUpperLimits().flatten(),
     )
-    trajopt.AddVelocityBounds(
-        -vel_limits.flatten(),
-        vel_limits.flatten(),
-    )
+    # trajopt.AddVelocityBounds(
+    #     -vel_limits.flatten(),
+    #     vel_limits.flatten(),
+    # )
 
     # ============= Constraints =============
     trajopt.AddDurationConstraint(duration_constraints[0], duration_constraints[1])
@@ -236,6 +238,9 @@ def setup_trajectory_optimization_from_q1_to_q2(
 
         guess_qs.append(guess_q)
 
+    control_pts_guess = prog.GetInitialGuess(trajopt.control_points())
+    initial_spline = BsplineTrajectory(trajopt.basis(), control_pts_guess)
+
     max_vel = optimization_plant.GetVelocityUpperLimits().flatten()
     if q_safe is not None:
         dist = np.abs(q_safe - q1) + np.abs(q2 - q_safe)
@@ -260,7 +265,7 @@ def setup_trajectory_optimization_from_q1_to_q2(
     for s in evaluate_at_s:
         trajopt.AddPathPositionConstraint(collision_constraint, s)
 
-    return trajopt, prog, guess_qs
+    return trajopt, prog, guess_qs, initial_spline
 
 
 def solve_kinematic_traj_opt(
@@ -289,7 +294,12 @@ def solve_kinematic_traj_opt(
     if acc_limits is None:
         acc_limits = np.full(7, 1.0)
 
-    trajopt, prog, guess_qs = setup_trajectory_optimization_from_q1_to_q2(
+    (
+        trajopt,
+        prog,
+        guess_qs,
+        initial_spline,
+    ) = setup_trajectory_optimization_from_q1_to_q2(
         station,
         q1,
         q_safe,
@@ -314,17 +324,25 @@ def solve_kinematic_traj_opt(
                 "red",
             )
         )
-        return None, False, guess_qs
+        return None, False, guess_qs, initial_spline, None
 
     print(colored("✓ Trajectory optimization succeeded!", "green"))
 
-    trajectory = resolve_with_toppra(station, trajopt, result, vel_limits, acc_limits)
-
-    print(
-        colored(f"✓ TOPPRA succeeded! Duration: {trajectory.end_time():.2f}s", "green")
+    trajectory, toppra_success, solved_spline = resolve_with_toppra(
+        station, trajopt, result, vel_limits, acc_limits
     )
 
-    return trajectory, True, guess_qs
+    if (not toppra_success) or trajectory is None:
+        print(colored("❌ TOPPRA failed to reparameterize the trajectory!", "red"))
+        return None, False, guess_qs, initial_spline, solved_spline
+    else:
+        print(
+            colored(
+                f"✓ TOPPRA succeeded! Duration: {trajectory.end_time():.2f}s", "green"
+            )
+        )
+
+    return trajectory, True, guess_qs, initial_spline, solved_spline
 
 
 def solve_kinematic_traj_opt_async(
@@ -347,7 +365,13 @@ def solve_kinematic_traj_opt_async(
     Wrapper for solve_kinematic_traj_opt intended to be run in a background thread.
     Populates result_dict with 'trajectory', 'success', and 'ready' keys.
     """
-    trajectory, success, guess_qs = solve_kinematic_traj_opt(
+    (
+        trajectory,
+        success,
+        guess_qs,
+        initial_spline,
+        solved_spline,
+    ) = solve_kinematic_traj_opt(
         station=station,
         q1=q1,
         q_safe=q_safe,
@@ -391,4 +415,6 @@ def solve_kinematic_traj_opt_async(
     result_dict["trajectory"] = trajectory
     result_dict["success"] = success
     result_dict["guess_qs"] = guess_qs
+    result_dict["initial_spline"] = initial_spline
+    result_dict["solved_spline"] = solved_spline
     result_dict["ready"] = True

@@ -597,9 +597,7 @@ def plot_trajectory_in_meshcat(
         )
         positions.append(X_WB.translation())
 
-    _draw_positions_as_spheres(
-        station.internal_meshcat, positions, f"positions/{name}", rgba, radius
-    )
+    _draw_positions_as_spheres(station.internal_meshcat, positions, name, rgba, radius)
 
 
 def plot_configs_in_meshcat(
@@ -625,9 +623,7 @@ def plot_configs_in_meshcat(
         )
         positions.append(X_WB.translation())
 
-    _draw_positions_as_spheres(
-        station.internal_meshcat, positions, f"positions/{name}", rgba, radius
-    )
+    _draw_positions_as_spheres(station.internal_meshcat, positions, name, rgba, radius)
 
 
 def PlotPath(
