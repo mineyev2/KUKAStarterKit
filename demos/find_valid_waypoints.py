@@ -45,7 +45,8 @@ def main() -> None:
     # Parameters
     # ==================================================================
     hemisphere_dist = 0.8
-    hemisphere_angle = np.deg2rad(60)
+    # hemisphere_angle = np.deg2rad(60)
+    hemisphere_angle = np.deg2rad(0)
     hemisphere_pos = np.array(
         [
             hemisphere_dist * np.cos(hemisphere_angle),

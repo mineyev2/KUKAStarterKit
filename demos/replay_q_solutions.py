@@ -118,13 +118,25 @@ def main():
     """
 
     hemisphere_dist = 0.8
-    hemisphere_angle = np.deg2rad(60)
+    # hemisphere_angle = np.deg2rad(60)
+    hemisphere_angle = np.deg2rad(0)
     hemisphere_radius = 0.08
 
     vel_limits = np.full(7, 1.0)  # rad/s
     acc_limits = np.full(7, 1.0)  # rad/s^2
 
-    q_initial = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])
+    # -1.16511234  1.05194255  1.29432601 -2.11578569 -0.26286749 -0.89005845 2.31989321
+    q_initial = np.array(
+        [
+            -1.16511234,
+            1.05194255,
+            1.29432601,
+            -2.11578569,
+            -0.26286749,
+            -0.89005845,
+            2.31989321,
+        ]
+    )
 
     builder = DiagramBuilder()
     scenario = LoadScenario(data=scenario_data)

@@ -227,7 +227,7 @@ class InternalStationDiagram(Diagram):
             ]
         )
 
-        add_floor(self._plant)
+        # add_floor(self._plant)
         add_wall(self._plant)
 
         # hemisphere_wall_rot = RotationMatrix.MakeZRotation(self.hemisphere_angle)
@@ -250,7 +250,7 @@ class InternalStationDiagram(Diagram):
         )
 
         # add sphere to visualize collisions
-        obj_radius = 0.05  # space to give microscope tip to avoid collision
+        obj_radius = 0.04  # space to give microscope tip to avoid collision
         add_sphere(
             self._plant,
             name="collision_sphere",
@@ -324,7 +324,7 @@ class InternalStationDiagram(Diagram):
         )
 
         # Add other world geometry (e.g., floor, wall, etc.)
-        add_floor(self._optimization_plant)
+        # add_floor(self._optimization_plant)
         add_wall(self._optimization_plant)
         # add_wall(
         #     self._optimization_plant,

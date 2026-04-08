@@ -190,7 +190,7 @@ def setup_trajectory_optimization_from_q1_to_q2(
 
     # ============= Costs =============
     # trajopt.AddDurationCost(duration_cost)
-    # trajopt.AddPathLengthCost(path_length_cost)
+    trajopt.AddPathLengthCost(0.01)
 
     # ============= Bounds =============
     trajopt.AddPositionBounds(
@@ -241,6 +241,11 @@ def setup_trajectory_optimization_from_q1_to_q2(
     control_pts_guess = prog.GetInitialGuess(trajopt.control_points())
     initial_spline = BsplineTrajectory(trajopt.basis(), control_pts_guess)
 
+    # Sanity check for collisions
+    optimization_plant_context = (
+        station.internal_station.get_optimization_plant_context()
+    )
+
     max_vel = optimization_plant.GetVelocityUpperLimits().flatten()
     if q_safe is not None:
         dist = np.abs(q_safe - q1) + np.abs(q2 - q_safe)
@@ -249,10 +254,6 @@ def setup_trajectory_optimization_from_q1_to_q2(
 
     guess_duration = np.max(dist / max_vel) * 1.5
     prog.SetInitialGuess(trajopt.duration(), guess_duration)
-
-    optimization_plant_context = (
-        station.internal_station.get_optimization_plant_context()
-    )
 
     collision_constraint = MinimumDistanceLowerBoundConstraint(
         optimization_plant,
@@ -324,6 +325,11 @@ def solve_kinematic_traj_opt(
                 "red",
             )
         )
+
+        # Print infeasible constraint names for debugging
+        for name in result.GetInfeasibleConstraintNames(prog):
+            print(colored(f"  infeasible: {name}", "red"))
+
         return None, False, guess_qs, initial_spline, None
 
     print(colored("✓ Trajectory optimization succeeded!", "green"))
@@ -365,6 +371,12 @@ def solve_kinematic_traj_opt_async(
     Wrapper for solve_kinematic_traj_opt intended to be run in a background thread.
     Populates result_dict with 'trajectory', 'success', and 'ready' keys.
     """
+
+    print("Starting asynchronous trajectory optimization...")
+    print("Starting point (q1): ", q1)
+    print("Safe point (q_safe): ", q_safe)
+    print("Goal point (q2): ", q2)
+
     (
         trajectory,
         success,
@@ -379,7 +391,7 @@ def solve_kinematic_traj_opt_async(
         vel_limits=vel_limits,
         acc_limits=acc_limits,
         duration_constraints=duration_constraints,
-        num_control_points=num_control_points,
+        num_control_points=25,
         duration_cost=duration_cost,
         path_length_cost=path_length_cost,
         num_samples=num_samples,
