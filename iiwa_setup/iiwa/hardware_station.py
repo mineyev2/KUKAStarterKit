@@ -250,7 +250,7 @@ class InternalStationDiagram(Diagram):
         )
 
         # add sphere to visualize collisions
-        obj_radius = 0.04  # space to give microscope tip to avoid collision
+        obj_radius = 0.06  # space to give microscope tip to avoid collision
         add_sphere(
             self._plant,
             name="collision_sphere",
