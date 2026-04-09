@@ -52,20 +52,6 @@ def check_joint_limits(trajectory_joint_poses, joint_lower_limits, joint_upper_l
 
     is_valid = len(violations) == 0
 
-    if not is_valid:
-        print(colored(f"⚠ Found {len(violations)} joint limit violations:", "yellow"))
-    #     for v in violations[:5]:  # Show first 5 violations
-    #         print(
-    #             colored(
-    #                 f"  Joint {v['joint_idx']+1}, waypoint {v['waypoint_idx']}: "
-    #                 f"{np.rad2deg(v['value']):.2f}° violates {v['limit_type']} limit "
-    #                 f"{np.rad2deg(v['limit_value']):.2f}° by {np.rad2deg(v['violation_amount']):.2f}°",
-    #                 "yellow",
-    #             )
-    #         )
-    #     if len(violations) > 5:
-    #         print(colored(f"  ... and {len(violations) - 5} more violations", "yellow"))
-
     return is_valid, violations
 
 
@@ -169,12 +155,12 @@ def check_collisions(station, trajectory_joint_poses):
 
     is_valid = len(violations) == 0
 
-    if not is_valid:
-        print(
-            colored(
-                f"⚠ Found collision violations at {len(violations)} waypoints", "yellow"
-            )
-        )
+    # if not is_valid:
+    #     print(
+    #         colored(
+    #             f"⚠ Found collision violations at {len(violations)} waypoints", "yellow"
+    #         )
+    #     )
 
     return is_valid, violations
 

@@ -61,19 +61,20 @@ def hemisphere_slerp(A, B, center, radius, speed_factor=1.0):
     dot = np.clip(np.dot(a_hat, b_hat), -1.0, 1.0)
     theta = np.arccos(dot)
 
+    # Handle degenerate case: A and B are the same point (or nearly so)
+    if theta < 1e-6:
+        t_final = 0.5 / speed_factor
+        t = np.linspace(0, t_final, 3)
+        path = np.tile(A, (3, 1))
+        return path.T, t
+
     # Create time array for PiecewisePolynomial
-    # Make t depend on the length of the arc that we are traversing for more natural timing (longer paths take more time)
+    # Make t depend on the length of the arc for more natural timing
     arc_length = radius * theta
-    t_final = (
-        arc_length * 125 / speed_factor
-    )  # Scale by speed factor to make it faster or slower
-    num_points = int(t_final * 40)
+    t_final = arc_length * 125 / speed_factor
+    num_points = max(3, int(t_final * 40))
 
     t = np.linspace(0, t_final, num_points)
-
-    # if theta < 1e-6:  # points are extremely close
-    #     path = np.tile(A, (num_points, 1))
-    #     return path
 
     # Slerp interpolation
     t_vals = np.linspace(0, 1, num_points)
