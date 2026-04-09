@@ -59,7 +59,7 @@ def main() -> None:
         [-np.cos(hemisphere_angle), -np.sin(hemisphere_angle), 0]
     )
 
-    num_scan_points = 100
+    num_scan_points = 50
     coverage = 1.0
     elbow_angle = np.deg2rad(135)
     default_position = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])

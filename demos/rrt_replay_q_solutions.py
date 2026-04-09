@@ -1,8 +1,9 @@
 """
-Replays hemisphere_q_solutions.csv step by step using RRT-Connect path planning.
+Replays hemisphere_q_solutions.csv step by step using RRT-Connect or RRT*-Connect.
 
 Usage:
     python demos/rrt_replay_q_solutions.py
+    python demos/rrt_replay_q_solutions.py --planner rrt_star
     python demos/rrt_replay_q_solutions.py --start_idx 5
     python demos/rrt_replay_q_solutions.py --csv outputs/my_solutions.csv
     python demos/rrt_replay_q_solutions.py --step_size 0.05 --max_iter 10000
@@ -30,6 +31,7 @@ from termcolor import colored
 from iiwa_setup.iiwa import IiwaHardwareStationDiagram
 from utils.planning import move_along_trajectory, plot_trajectory_in_meshcat
 from utils.RRT import plan_rrt_async, plot_rrt_raw_path_in_meshcat
+from utils.RRTStar import plan_rrt_star_async
 
 
 class State(Enum):
@@ -90,7 +92,20 @@ def main():
         "--max_iter",
         type=int,
         default=10000,
-        help="Maximum RRT-Connect iterations per segment.",
+        help="Maximum RRT iterations per segment.",
+    )
+    parser.add_argument(
+        "--planner",
+        type=str,
+        default="rrt",
+        choices=["rrt", "rrt_star"],
+        help="Planner to use: 'rrt' (RRT-Connect) or 'rrt_star' (RRT*-Connect).",
+    )
+    parser.add_argument(
+        "--rewire_radius",
+        type=float,
+        default=0.3,
+        help="Max rewire radius for RRT* (rad). Only used when --planner rrt_star.",
     )
     args = parser.parse_args()
 
@@ -229,9 +244,14 @@ def main():
             "cyan",
         )
     )
+    planner_label = "RRT*-Connect" if args.planner == "rrt_star" else "RRT-Connect"
+    rrt_star_info = (
+        f", rewire_radius={args.rewire_radius}" if args.planner == "rrt_star" else ""
+    )
     print(
         colored(
-            f"RRT params: step_size={args.step_size}, max_iter={args.max_iter}", "cyan"
+            f"Planner: {planner_label} | step_size={args.step_size}, max_iter={args.max_iter}{rrt_star_info}",
+            "cyan",
         )
     )
 
@@ -290,9 +310,12 @@ def main():
                 if preview_smooth_mode
                 else ""
             )
+            planner_name = (
+                "RRT*-Connect" if args.planner == "rrt_star" else "RRT-Connect"
+            )
             print(
                 colored(
-                    f"\n{mode_label}RRT-Connect planning: "
+                    f"\n{mode_label}{planner_name} planning: "
                     f"solution {curr_solution_idx} → {next_idx} (row {row_idx})",
                     "cyan",
                 )
@@ -302,9 +325,10 @@ def main():
 
             traj_result["ready"] = False
             traj_result["success"] = False
-            traj_thread = threading.Thread(
-                target=plan_rrt_async,
-                args=(
+
+            if args.planner == "rrt_star":
+                target_fn = plan_rrt_star_async
+                thread_args = (
                     station,
                     q_current,
                     q_target,
@@ -313,7 +337,24 @@ def main():
                     traj_result,
                     args.step_size,
                     args.max_iter,
-                ),
+                    args.rewire_radius,
+                )
+            else:
+                target_fn = plan_rrt_async
+                thread_args = (
+                    station,
+                    q_current,
+                    q_target,
+                    vel_limits,
+                    acc_limits,
+                    traj_result,
+                    args.step_size,
+                    args.max_iter,
+                )
+
+            traj_thread = threading.Thread(
+                target=target_fn,
+                args=thread_args,
                 daemon=True,
             )
             traj_thread.start()
