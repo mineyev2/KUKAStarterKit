@@ -23,10 +23,13 @@ poetry install -vvv
 ```
 (the `-vvv` flag adds verbose output).
 
+Ensure you have built colmap (cloned via submodule) with CUDA 13 and specify the correct architecture: [Colmap Installation](https://colmap.github.io/install.html)
+
+Then locally install pycolmap after building Colmap's C++ code: [PyColmap Installation](https://colmap.github.io/pycolmap/index.html#pycolmap-index)
+
 We must install a couple files manually as well (this is for gsplat):
 ```
-poetry run pip install --no-build-isolation git+https://github.com/rahul-goel/fused-ssim.git@328dc9836f513d00c4b5bc38fe30478b4435cbb5
-poetry run pip install gsplat --no-build-isolation
+poetry run pip install --no-build-isolation git+https://github.com/rahul-goel/fused-ssim.git@a7c48d6dd7ac6dc39a7958c7c4452e0b10418f38
 ```
 
 For local Drake and manipulation installations, insert the following at the end of the
