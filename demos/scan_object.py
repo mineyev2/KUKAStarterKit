@@ -95,10 +95,14 @@ def _animate_configs(configs, station, station_context, simulator, meshcat):
             meshcat.SetSliderValue(f"Joint {i+1} (deg)", round(np.rad2deg(qi), 1))
 
 
-def main(use_hardware: bool, no_cam: bool = False, skip_opt: bool = False) -> None:
+def main(
+    use_hardware: bool, no_cam: bool = False, skip_opt: bool = False, start_idx: int = 0
+) -> None:
     cfg = get_config(use_hardware)
     speed_factor = cfg["speed_factor"]
     max_joint_velocities = cfg["max_joint_velocities"]
+    vel_limits = cfg["vel_limits"]
+    acc_limits = cfg["acc_limits"]
 
     scenario_data = """
     directives:
@@ -145,9 +149,6 @@ def main(use_hardware: bool, no_cam: bool = False, skip_opt: bool = False) -> No
     # Robot parameters
     elbow_angle = np.deg2rad(135)
     default_position = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])
-
-    vel_limits = np.full(7, 1.0)  # rad/s
-    acc_limits = np.full(7, 1.0)  # rad/s^2
 
     r = np.array([0, 0, -1])
     v = np.array([0, 1, 0])
@@ -367,7 +368,7 @@ def main(use_hardware: bool, no_cam: bool = False, skip_opt: bool = False) -> No
     # ==================================================================
     state = State.WAITING_TO_GO_TO_START
     prev_state = State.WAITING_TO_GO_TO_START
-    scan_idx = 0  # waypoint we are planning to visit next
+    scan_idx = start_idx  # waypoint we are planning to visit next
     curr_idx = 0  # waypoint robot is currently at
     trajectory_start_time = 0.0
 
@@ -404,7 +405,6 @@ def main(use_hardware: bool, no_cam: bool = False, skip_opt: bool = False) -> No
     # Per-scan photo state
     scan_frame_dir = None
     optical_halfway_time = 0.0
-    midpoint_pose_saved = False
     capture_traj_times: np.ndarray = np.array([])
     next_capture_idx = 0
     scan_frame_idx = 0
@@ -508,6 +508,11 @@ def main(use_hardware: bool, no_cam: bool = False, skip_opt: bool = False) -> No
 
         # ------------------------------------------------------------------
         elif state == State.WAITING_FOR_NEXT_SCAN:
+            # Clear previous path visualizations
+            meshcat.Delete("hemisphere_traj")
+            meshcat.Delete("rrt_raw_path")
+            meshcat.Delete("rrt_traj")
+
             # Skip pre-computation failures
             while scan_idx < n and np.isnan(q_array[scan_idx]).any():
                 print(
@@ -617,7 +622,6 @@ def main(use_hardware: bool, no_cam: bool = False, skip_opt: bool = False) -> No
                 is_pausing_for_capture = False
                 pause_start_sim_time = 0.0
                 hold_traj_time = 0.0
-                midpoint_pose_saved = False
                 print(colored(f"  Frame dir: {scan_frame_dir}", "cyan"))
 
             if hemisphere_valid:
@@ -786,6 +790,16 @@ def main(use_hardware: bool, no_cam: bool = False, skip_opt: bool = False) -> No
 
                 elapsed_pause = current_time - pause_start_sim_time
                 if elapsed_pause >= 0.5:
+                    # Save camera pose
+                    if scan_frame_dir is not None:
+                        cam_pose = internal_plant.GetFrameByName(
+                            "camera_link"
+                        ).CalcPoseInWorld(internal_plant_context)
+                        np.save(
+                            str(scan_frame_dir / f"pose_{scan_frame_idx:05d}.npy"),
+                            cam_pose.GetAsMatrix4(),
+                        )
+
                     if not no_cam:
                         with _latest_frame_lock:
                             frame = (
@@ -829,23 +843,6 @@ def main(use_hardware: bool, no_cam: bool = False, skip_opt: bool = False) -> No
                             f"  ⏸ Stop {next_capture_idx + 1}/{num_pictures} "
                             f"at t={hold_traj_time:.3f}s",
                             "yellow",
-                        )
-                    )
-
-                # Save camera pose at deepest inward point
-                if (
-                    not midpoint_pose_saved
-                    and scan_frame_dir is not None
-                    and traj_time >= optical_halfway_time
-                ):
-                    cam_pose = internal_plant.GetFrameByName(
-                        "camera_link"
-                    ).CalcPoseInWorld(internal_plant_context)
-                    np.save(str(scan_frame_dir / "pose.npy"), cam_pose.GetAsMatrix4())
-                    midpoint_pose_saved = True
-                    print(
-                        colored(
-                            f"  ✓ Saved camera pose at deepest point → pose.npy", "cyan"
                         )
                     )
 
@@ -911,5 +908,16 @@ if __name__ == "__main__":
         action="store_true",
         help="Skip optical axis trajectory (no photos).",
     )
+    parser.add_argument(
+        "--start_idx",
+        type=int,
+        default=0,
+        help="Waypoint index to start scanning from (default: 0).",
+    )
     args = parser.parse_args()
-    main(use_hardware=args.use_hardware, no_cam=args.no_cam, skip_opt=args.skip_opt)
+    main(
+        use_hardware=args.use_hardware,
+        no_cam=args.no_cam,
+        skip_opt=args.skip_opt,
+        start_idx=args.start_idx,
+    )
