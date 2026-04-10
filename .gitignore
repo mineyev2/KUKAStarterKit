@@ -1,7 +1,8 @@
 .vscode
 .venv
-__pycache__
-outputs/microscope_scripts/outputs
 .idea
+__pycache__
+microscope_scripts/outputs
+outputs/
 data
 results/
