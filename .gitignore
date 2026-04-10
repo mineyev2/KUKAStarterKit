@@ -3,3 +3,5 @@
 __pycache__
 outputs/microscope_scripts/outputs
 .idea
+data
+results/

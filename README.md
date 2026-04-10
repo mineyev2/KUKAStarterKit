@@ -1,7 +1,11 @@
-# iiwa_setup
-iiwa real-world setup
+# Installation
 
-## Installation
+(TODO: Make sure to install CUDA and toolkits first)
+This repo was run for:
+CUDA 13.0
+PyTorch for 13.0
+
+(Make sure nvidia toolkit and CUDA are properly setup first)
 
 This repo uses Poetry for dependency management. To set up this project, first install
 [Poetry](https://python-poetry.org/docs/#installation) and, make sure to have Python3.10
@@ -18,6 +22,12 @@ following command:
 poetry install -vvv
 ```
 (the `-vvv` flag adds verbose output).
+
+We must install a couple files manually as well (this is for gsplat):
+```
+poetry run pip install --no-build-isolation git+https://github.com/rahul-goel/fused-ssim.git@328dc9836f513d00c4b5bc38fe30478b4435cbb5
+poetry run pip install gsplat --no-build-isolation
+```
 
 For local Drake and manipulation installations, insert the following at the end of the
 `.venv/bin/activate` and `.venv/bin/activate.nu` files, modifying the paths and python
@@ -234,114 +244,17 @@ pinning the processes to the same core and increasing their priority.
 `sudo setcap cap_sys_nice=eip /usr/bin/chrt`. This is only required once.
 2. Run the desired script using `taskset -c 1,29 chrt -r 90 python {...} --use_hardware`.
 
-## Optitrack
+# Usage
 
-To use the Optitrack system, run the Optitrack client from the
-[driver]((https://github.com/RobotLocomotion/optitrack-driver)) directory:
+To run an example to test that everything works, you can download their sample dataset. First, navigate to the `reconstruction` folder.
+
 ```
-bazel run //src:optitrack_client
-```
-
-### Inspecting Optitrack LCM messages
-
-Clone [drake](https://github.com/RobotLocomotion/drake) and run LCM Spy from inside the
-drake directory:
-```bash
-bazel run lcmtypes:drake-lcm-spy
+python datasets/download_dataset.py
 ```
 
-### Calibrating Optitrack bodies
-
-In a usual setup, we want to use Optitrack to update our internal model of the world
-(multibody plant). However, the body poses returned by Optitrack assume different world
-and body frames than the ones from our plant. Hence, we need to find the transform
-between the Optitrack body pose and the plant body pose.
-
-`scripts/calibrate_optitrack_body.py` can be used for computing this transform using the
-the following procedure:
-
-#### 1. Setup
-
-Make sure that the optitrack iiwa frame is in the middle of the iiwa (in the middle of
-the 4 corner points of which 3 are optitrack markers). By default, the frame will be in
-the middle of the 3 optitrack markers, which is slightly different. It can be changed
-using the optitrack GUI.
-
-Modify the `scenario_str` to contain the body of interest (currently
-`sugar_box.dmd.yaml`) and a second (reference) version of that body (currently
-`sugar_box_reference.dmd.yaml`). Both should be identical apart from the model name and
-contain the SDFormat file of the body/ object.
-
-Modify `object_name` and `ref_object_name` to match the model names of the first and
-second version of the body.
-
-Modify `ref_object_initial_positions` to position the body **above** the Optitrack
-workspace (the object should fall on the floor and not start on the floor).
-
-Modify `optitrack_iiwa_id` and `optitrack_body_id` to match the body IDs of the
-Optitrack system. These can be identified as described
-[here](#inspecting-optitrack-lcm-messages).
-
-Make sure that `X_oB_pB = RigidTransform([0, 0, 0])` is uncommented.
-
-#### 2. Determine the reference body's positions
-
-1. Set `is_init = True` and run the script.
-2. Wait a few seconds until the printed pose stays approximately static. Then
-note down the printed z-position and terminate the script.
-3. Modify the reference body directive file to include a weld from the world frame to
-the body frame. The weld transform should include the printed z-position, no rotation,
-and planar positions that position the object close to the iiwa base inside the
-Optitrack workspace.
-
-#### 3. Determine the Optitrack body to plant-body transform
-
-1. Place the real object at the planar position that corresponds to the weld from step 2.
-Taking the iiwa center as the world origin and using a ruler to measure positions and
-ensuring axis-aligned rotations should be helpful strategies here.
-2. Remove the collision geometries from the body SDFormat file.
-3. Set `is_init = False` and run the script.
-4. Note down the printed transform and terminate the script.
-5. Set `X_W_oB` to the printed transform.
-6. Comment out `X_oB_pB = RigidTransform([0, 0, 0])`.
-7. Run the script and check if both bodies align. If they do, then `X_oB_pB` represents
-the desired transform.
-
-### Recording Optitrack object pose data
-
-The script `scripts/record_optitrack_body_pose_data.py` can be used for recording
-the pose of an object using optitrack.
-
-Example usage:
-```bash
-python scripts/record_optitrack_body_pose_data.py --out_path sugar_box_logs \
---object_directive "package://iiwa_setup/sugar_box.dmd.yaml" --object_name sugar_box \
---optitrack_object_id 3 --object_initial_positions '[1, 0, 0, 0, 0.5, 0.5, 0.025]' \
---p_optitrackBody_plantBody_world '[-0.03427348, 0.01983565, -0.01967432]' \
---R_optitrackBody_plantBody_world '[0.013, -0.035, 1.372]' --save_html
+Then, run `simple_trainer.py` with one of the datsets:
 ```
-
-Note that data is only saved if the script is excited gracefully using the
-`Stop Simulation` button in Meshcat.
-
-### Simulating Optitrack Measurements
-
-The script `scripts/simulate_optitrack.py` can be used to simulate Optitrack frame
-measurements. The script either loads Optitrack frames and their associated publish
-times from disk (arbitrary number of objects) or opens a GUI for interactively moving
-a single object.
-
-Example usage (disk):
-```bash
-python scripts/simulate_optitrack.py --optitrack_frames_path frames.npy \
---optitrack_frame_times_path frame_times.npy
+CUDA_VISIBLE_DEVICES=0 python simple_trainer.py default \
+    --data_dir data/360_v2/garden/ --data_factor 4 \
+    --result_dir ./results/garden
 ```
-
-Example usage (GUI):
-```bash
-python scripts/simulate_optitrack.py --initial_object_position '[0.5, 0.0, 0.15]' \
---initial_object_quaternion '[1.0, 0.0, 0.0, 0.0]' --optitrack_object_ids '[4, 3]'
-```
-
-## Microscope Setup
-(TODO: Doesn't work on ubuntu 22.04 off the fly)
