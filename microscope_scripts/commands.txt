@@ -1,0 +1,6 @@
+// Powershell
+usbipd list
+
+https://learn.microsoft.com/en-gb/windows/wsl/connect-usb#attach-a-usb-device
+
+focus-stack --align-keep-size --global-align --nocrop --output=focusvar_circuit_global_align_nocrop.jpg outputs/focusvar_circuit/*.jpg

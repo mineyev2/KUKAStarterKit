@@ -2,3 +2,4 @@
 *.png filter=lfs diff=lfs merge=lfs -text
 *.vtk filter=lfs diff=lfs merge=lfs -text
 *.pkl filter=lfs diff=lfs merge=lfs -text
+microscope_scripts/vocab_trees/vocab_tree_flickr100K_words32K.bin filter=lfs diff=lfs merge=lfs -text
