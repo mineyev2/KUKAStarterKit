@@ -5,7 +5,6 @@ import sqlite3
 from pathlib import Path
 
 import cv2
-import enlighten
 import matplotlib.pyplot as plt
 import numpy as np
 import pycolmap

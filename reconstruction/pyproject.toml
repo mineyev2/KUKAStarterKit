@@ -1,0 +1,33 @@
+[project]
+name = "reconstruction"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10.19"
+dependencies = [
+    "fused-bilagrid",
+    "fused-ssim",
+    "gsplat>=1.5.3",
+    "imageio[ffmpeg]>=2.37.3",
+    "matplotlib>=3.10.8",
+    "nerfview>=0.1.2",
+    "opencv-python>=4.13.0.92",
+    "pillow>=12.2.0",
+    "pycolmap",
+    "pyyaml>=6.0.3",
+    "scikit-learn>=1.7.2",
+    "splines>=0.3.3",
+    "tensorboard>=2.20.0",
+    "tensorly>=0.9.0",
+    "torch>=2.11.0",
+    "torchmetrics[image]>=1.9.0",
+    "torchvision>=0.26.0",
+    "tqdm>=4.67.3",
+    "tyro>=0.8.8",
+    "viser>=1.0.26",
+]
+
+[tool.uv.sources]
+fused-ssim = { git = "https://github.com/rahul-goel/fused-ssim", rev = "328dc9836f513d00c4b5bc38fe30478b4435cbb5" }
+fused-bilagrid = { git = "https://github.com/harry7557558/fused-bilagrid", rev = "90f9788e57d3545e3a033c1038bb9986549632fe" }
+pycolmap = { path = "../colmap" }
