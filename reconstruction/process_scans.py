@@ -12,7 +12,8 @@ import pycolmap
 
 from pycolmap import logging
 from scipy.spatial.transform import Rotation as R
-from visualizers.feature_viewer import FeatureViewer
+
+from reconstruction.visualizers.feature_viewer import FeatureViewer
 
 
 def update_prior_poses(db_path, pose_dict, is_camera_to_world=False):
