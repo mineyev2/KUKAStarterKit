@@ -23,6 +23,8 @@ dependencies = [
     "torchmetrics[image]>=1.9.0",
     "torchvision>=0.26.0",
     "tqdm>=4.67.3",
+    "hydra-core>=1.3.0",
+    "omegaconf>=2.3.0",
     "tyro>=0.8.8",
     "viser>=1.0.26",
 ]

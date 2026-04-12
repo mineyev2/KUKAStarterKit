@@ -1,0 +1,9 @@
+# MCMCStrategy — densification via Markov Chain Monte Carlo
+# Paper: "3D Gaussian Splatting as Markov Chain Monte Carlo"
+_target_: gsplat.strategy.MCMCStrategy
+verbose: true
+
+# Key densification hyper-parameters (adjust with steps_scaler via adjust_steps)
+refine_start_iter: 500
+refine_stop_iter: 25000
+refine_every: 100

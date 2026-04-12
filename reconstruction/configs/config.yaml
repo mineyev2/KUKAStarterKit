@@ -1,0 +1,109 @@
+defaults:
+  - strategy: default
+  - _self_
+
+# ── Viewer ─────────────────────────────────────────────────────────────────────
+disable_viewer: false
+
+# ── Checkpoint / export ────────────────────────────────────────────────────────
+# Paths to .pt checkpoint files; if set, skips training and runs eval only.
+ckpt: null
+compression: null          # "png" or null
+render_traj_path: interp   # "interp" | "ellipse" | "spiral"
+render_traj_trim: 5        # frames to drop from each end before path generation; null to disable
+
+# ── Data ───────────────────────────────────────────────────────────────────────
+data_dir: data/360_v2/garden
+data_factor: 4
+result_dir: results/garden
+test_every: 8
+patch_size: null
+global_scale: 1.0
+normalize_world_space: true
+camera_model: pinhole      # "pinhole" | "ortho" | "fisheye"
+
+# ── Viewer server ──────────────────────────────────────────────────────────────
+port: 8080
+
+# ── Training ───────────────────────────────────────────────────────────────────
+batch_size: 1
+steps_scaler: 1.0
+max_steps: 30000
+eval_steps: [7000, 30000]
+save_steps: [7000, 30000]
+save_ply: false
+ply_steps: [7000, 30000]
+disable_video: false
+
+# ── Gaussian initialization ────────────────────────────────────────────────────
+init_type: sfm             # "sfm" | "random"
+init_num_pts: 100000       # ignored when init_type=sfm
+init_extent: 3.0           # ignored when init_type=sfm
+sh_degree: 3
+sh_degree_interval: 1000
+init_opa: 0.1
+init_scale: 1.0
+ssim_lambda: 0.2
+
+# ── Clipping planes ────────────────────────────────────────────────────────────
+near_plane: 0.01
+far_plane: 1.0e10
+
+# ── Rasterization ──────────────────────────────────────────────────────────────
+packed: false
+sparse_grad: false
+visible_adam: false
+antialiased: false
+random_bkgd: false
+
+# ── Learning rates ─────────────────────────────────────────────────────────────
+means_lr: 1.6e-4
+scales_lr: 5.0e-3
+opacities_lr: 5.0e-2
+quats_lr: 1.0e-3
+sh0_lr: 2.5e-3
+shN_lr: 1.25e-4            # 2.5e-3 / 20
+
+# ── Regularisation ─────────────────────────────────────────────────────────────
+opacity_reg: 0.0
+scale_reg: 0.0
+
+# ── Pose / camera optimisation ────────────────────────────────────────────────
+pose_opt: false
+pose_opt_lr: 1.0e-5
+pose_opt_reg: 1.0e-6
+pose_noise: 0.0
+
+# ── Appearance optimisation ───────────────────────────────────────────────────
+app_opt: false
+app_embed_dim: 16
+app_opt_lr: 1.0e-3
+app_opt_reg: 1.0e-6
+
+# ── Bilateral grid ─────────────────────────────────────────────────────────────
+use_bilateral_grid: false
+bilateral_grid_shape: [16, 16, 8]
+
+# ── Depth loss ─────────────────────────────────────────────────────────────────
+depth_loss: false
+depth_lambda: 0.01
+
+# ── Tensorboard ────────────────────────────────────────────────────────────────
+tb_every: 100
+tb_save_image: false
+
+# ── LPIPS ──────────────────────────────────────────────────────────────────────
+lpips_net: alex            # "alex" | "vgg"
+
+# ── 3DGUT ──────────────────────────────────────────────────────────────────────
+with_ut: false
+with_eval3d: false
+use_fused_bilagrid: false
+
+# ── Hydra internal settings ───────────────────────────────────────────────────
+hydra:
+  job:
+    chdir: false           # Keep the working directory; don't chdir to outputs/
+  run:
+    dir: outputs/hydra/${now:%Y-%m-%d_%H-%M-%S}
+  output_subdir: .hydra   # where hydra config snapshots are written (relative to run.dir)
