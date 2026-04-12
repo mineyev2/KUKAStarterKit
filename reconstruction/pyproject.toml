@@ -28,6 +28,10 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-fused-ssim = { git = "https://github.com/rahul-goel/fused-ssim", rev = "328dc9836f513d00c4b5bc38fe30478b4435cbb5" }
-fused-bilagrid = { git = "https://github.com/harry7557558/fused-bilagrid", rev = "90f9788e57d3545e3a033c1038bb9986549632fe" }
+fused-ssim = { git = "https://github.com/rahul-goel/fused-ssim", rev = "a7c48d6dd7ac6dc39a7958c7c4452e0b10418f38" }
+fused-bilagrid = { git = "https://github.com/harry7557558/fused-bilagrid", rev = "3bd774b644c3194225a5a0ddf46157092511ba3d" }
 pycolmap = { path = "../colmap" }
+
+[tool.uv.extra-build-dependencies]
+fused-bilagrid = ["torch>=2.11.0"]
+fused-ssim = ["torch>=2.11.0"]
