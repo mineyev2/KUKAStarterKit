@@ -15,77 +15,59 @@ from scipy.spatial.transform import Rotation as R
 from visualizers.feature_viewer import FeatureViewer
 
 
-def update_prior_poses(db_path, pose_dict, is_camera_to_world=False):
+def read_poses_from_scans(dataset_path, is_camera_to_world=False, as_quaternion=False):
     """
-    Updates the prior_qw, prior_qx, prior_qy, prior_qz, prior_tx, prior_ty, prior_tz
-    fields in the COLMAP database.
+    Reads robot poses from each scan subdirectory.
 
     Args:
-        db_path (str): Path to the COLMAP database.db
-        pose_dict (dict): Dictionary mapping image names (as stored in the DB) to 4x4 numpy arrays.
-        is_camera_to_world (bool): Set to True if your 4x4 matrices are Camera-to-World poses.
-                                   COLMAP expects World-to-Camera.
+        dataset_path (Path): Root dataset directory containing scan* subdirectories.
+        is_camera_to_world (bool): If True, the stored poses are Camera-to-World and
+                                   will be inverted to World-to-Camera before returning.
+        as_quaternion (bool): If True, each pose is returned as a dict
+                              {'qw', 'qx', 'qy', 'qz', 'tx', 'ty', 'tz'}.
+                              If False, each pose is returned as a 4x4 numpy array.
+
+    Returns:
+        dict: Mapping image names (e.g. 'scan001.jpg') to either 4x4 numpy arrays
+              or quaternion+translation dicts, depending on as_quaternion.
     """
-    # Connect to the COLMAP SQLite database
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # Add prior pose columns if they don't exist
-    columns = [
-        "prior_qw",
-        "prior_qx",
-        "prior_qy",
-        "prior_qz",
-        "prior_tx",
-        "prior_ty",
-        "prior_tz",
-    ]
-
-    for col in columns:
-        try:
-            cursor.execute(f"ALTER TABLE images ADD COLUMN {col} REAL;")
-        except sqlite3.OperationalError:
-            # OperationalError is raised if the column already exists,
-            # so we can safely ignore it.
-            pass
-
-    for image_name, matrix in pose_dict.items():
-        # Invert the matrix if it's Camera-to-World
-        if is_camera_to_world:
-            matrix = np.linalg.inv(matrix)
-
-        # Extract the 3x3 rotation matrix and 3x1 translation vector
-        rot_matrix = matrix[:3, :3]
-        tvec = matrix[:3, 3]
-
-        # Convert rotation matrix to quaternion using Scipy
-        # Note: Scipy's as_quat() returns scalar-last format: [qx, qy, qz, qw]
-        rot = R.from_matrix(rot_matrix)
-        qx, qy, qz, qw = rot.as_quat()
-
-        tx, ty, tz = tvec
-
-        # Update the row for this specific image in the database
-        cursor.execute(
-            """
-            UPDATE images 
-            SET prior_qw = ?, prior_qx = ?, prior_qy = ?, prior_qz = ?,
-                prior_tx = ?, prior_ty = ?, prior_tz = ?
-            WHERE name = ?
-            """,
-            (qw, qx, qy, qz, float(tx), float(ty), float(tz), image_name),
-        )
-
-    # Commit the changes and close the connection
-    conn.commit()
-    conn.close()
-    print(f"Successfully updated prior poses for {len(pose_dict)} images.")
+    poses = {}
+    for scan_dir in sorted(dataset_path.glob("scan*")):
+        pose_file = scan_dir / "pose.npy"
+        if pose_file.exists():
+            image_name = f"{scan_dir.name}.jpg"
+            matrix = np.load(pose_file)
+            if is_camera_to_world:
+                matrix = np.linalg.inv(matrix)
+            if as_quaternion:
+                qx, qy, qz, qw = R.from_matrix(matrix[:3, :3]).as_quat()
+                tx, ty, tz = matrix[:3, 3]
+                poses[image_name] = {
+                    "qw": qw,
+                    "qx": qx,
+                    "qy": qy,
+                    "qz": qz,
+                    "tx": tx,
+                    "ty": ty,
+                    "tz": tz,
+                }
+            else:
+                poses[image_name] = matrix
+            fmt = "quaternion" if as_quaternion else "matrix"
+            print(f"Loaded pose for {image_name} as {fmt}")
+    return poses
 
 
-def create_reference_reconstruction(db_path, output_dir):
+def create_reference_reconstruction(db_path, output_dir, pose_dict):
     """
-    Bypasses PyCOLMAP database bindings by reading directly via SQLite.
-    Combines auto-assigned IDs with known poses to create a COLMAP text model.
+    Creates a COLMAP text model from the database and known poses.
+
+    Args:
+        db_path: Path to the COLMAP database.db
+        output_dir: Directory to write cameras.txt, images.txt, points3D.txt
+        pose_dict (dict): Mapping image names to quaternion+translation dicts
+                          {'qw','qx','qy','qz','tx','ty','tz'}, as returned by
+                          read_poses_from_scans(as_quaternion=True).
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -96,9 +78,7 @@ def create_reference_reconstruction(db_path, output_dir):
     cursor.execute("SELECT camera_id, model, width, height, params FROM cameras")
     db_cameras = cursor.fetchall()
 
-    cursor.execute(
-        "SELECT image_id, name, camera_id, prior_qw, prior_qx, prior_qy, prior_qz, prior_tx, prior_ty, prior_tz FROM images"
-    )
+    cursor.execute("SELECT image_id, name, camera_id FROM images")
     db_images = cursor.fetchall()
     conn.close()
 
@@ -129,7 +109,10 @@ def create_reference_reconstruction(db_path, output_dir):
     # Write images.txt
     with open(output_dir / "images.txt", "w") as f:
         f.write("# IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ, CAMERA_ID, NAME\n")
-        for image_id, name, camera_id, qw, qx, qy, qz, tx, ty, tz in db_images:
+        for image_id, name, camera_id in db_images:
+            pose = pose_dict[name]
+            qw, qx, qy, qz = pose["qw"], pose["qx"], pose["qy"], pose["qz"]
+            tx, ty, tz = pose["tx"], pose["ty"], pose["tz"]
             f.write(
                 f"{image_id} {qw} {qx} {qy} {qz} {tx} {ty} {tz} {camera_id} {name}\n"
             )
@@ -198,18 +181,12 @@ def main():
 
     if args.mode == "triangulate":
         # Use known robot poses: lock cameras, triangulate points.
-        poses = {}
-        for scan_dir in sorted(dataset_path.glob("scan*")):
-            pose_file = scan_dir / "pose.npy"
-            if pose_file.exists():
-                image_name = f"{scan_dir.name}.jpg"
-                poses[image_name] = np.load(pose_file)
-                print(f"Loaded pose for {image_name}: shape {poses[image_name].shape}")
-
-        update_prior_poses(database_path, poses, is_camera_to_world=True)
+        poses = read_poses_from_scans(
+            dataset_path, is_camera_to_world=True, as_quaternion=True
+        )
 
         reference_model_path = workspace_dir / "reference_model"
-        create_reference_reconstruction(database_path, reference_model_path)
+        create_reference_reconstruction(database_path, reference_model_path, poses)
 
         reference = pycolmap.Reconstruction()
         reference.read(str(reference_model_path))
