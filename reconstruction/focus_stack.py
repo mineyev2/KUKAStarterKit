@@ -9,10 +9,12 @@ def run_focus_stack_on_subfolders(parent_folder):
     # Create the output directory for focus-stacked results
     output_dir = os.path.join(parent_folder, "images")
     depth_dir = os.path.join(parent_folder, "depthmaps")
+    mask_dir = os.path.join(parent_folder, "masks")
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(depth_dir, exist_ok=True)
+    os.makedirs(mask_dir, exist_ok=True)
 
-    excluded__search_dirs = {"images", "depthmaps", "colmap"}
+    excluded__search_dirs = {"images", "depthmaps", "colmap", "masks"}
 
     for subdir in sorted(os.listdir(parent_folder)):
         subdir_path = os.path.join(parent_folder, subdir)
@@ -26,12 +28,14 @@ def run_focus_stack_on_subfolders(parent_folder):
                 continue
             output_file = os.path.join(output_dir, f"{subdir}.jpg")
             depth_file = os.path.join(depth_dir, f"{subdir}.png")
+            mask_file = os.path.join(mask_dir, f"{subdir}.png")
             cmd = [
                 "focus-stack",
                 "--full-resolution-align",
                 "--global-align",
                 "--align-keep-size",
                 "--no-contrast",
+                f"--validmask={mask_file}",
                 f"--depthmap={depth_file}",
                 f"--output={output_file}",
             ] + image_files

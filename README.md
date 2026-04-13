@@ -30,6 +30,8 @@ Creating the Python Environment:
 ```bash
 cd reconstruction
 uv sync
+# Installing the colmap python bindings
+cd ../colmap && uv pip install .
 ```
 
 For local Drake and manipulation installations, insert the following at the end of the
