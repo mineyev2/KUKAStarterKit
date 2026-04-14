@@ -1,3 +1,7 @@
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import numpy as np
 
 from termcolor import colored
@@ -60,6 +64,7 @@ def check_joint_velocities(
     t,
     max_joint_velocities=np.deg2rad(60 * np.ones(7)),
     save_path=None,
+    plot=True,
 ):  # Example limits in rad/s
     """
     Check if joint velocities in a trajectory exceed specified limits.
@@ -68,8 +73,8 @@ def check_joint_velocities(
         trajectory_joint_poses: (7, N) array of joint positions, in radians
         t: (N,) array of time values
         max_joint_velocities: (7,) array of maximum allowed joint velocities (absolute value)
-        save_path: optional Path/str — if provided, saves joint_positions.csv and
-                   joint_velocities.csv into that directory
+        save_path: optional Path/str — if provided, saves CSVs and plots into that directory
+        plot: if True and save_path is set, saves joint_positions.png and joint_velocities.png
 
     Returns:
         is_valid: bool, True if all velocities are within limits
@@ -126,10 +131,11 @@ def check_joint_velocities(
         import os
 
         os.makedirs(save_path, exist_ok=True)
-        # Joint positions: rows = timesteps, cols = joints
-        pos_header = "time," + ",".join(
-            [f"q{i}" for i in range(trajectory_joint_poses.shape[0])]
-        )
+        n_joints = trajectory_joint_poses.shape[0]
+        t_mid = 0.5 * (t[:-1] + t[1:])
+
+        # --- CSVs ---
+        pos_header = "time," + ",".join([f"q{i}" for i in range(n_joints)])
         np.savetxt(
             os.path.join(save_path, "joint_positions.csv"),
             np.vstack((t, trajectory_joint_poses)).T,
@@ -137,11 +143,7 @@ def check_joint_velocities(
             header=pos_header,
             comments="",
         )
-        # Joint velocities: rows = segments, cols = joints (one fewer row than positions)
-        t_mid = 0.5 * (t[:-1] + t[1:])
-        vel_header = "time_mid," + ",".join(
-            [f"dq{i}" for i in range(velocities.shape[0])]
-        )
+        vel_header = "time_mid," + ",".join([f"dq{i}" for i in range(n_joints)])
         np.savetxt(
             os.path.join(save_path, "joint_velocities.csv"),
             np.vstack((t_mid, velocities)).T,
@@ -149,6 +151,50 @@ def check_joint_velocities(
             header=vel_header,
             comments="",
         )
+
+        # --- Plots ---
+        if plot:
+            # Joint positions
+            fig, axes = plt.subplots(
+                n_joints, 1, figsize=(10, 2 * n_joints), sharex=True
+            )
+            fig.suptitle("Joint Positions over Time")
+            for i, ax in enumerate(axes):
+                ax.plot(t, np.rad2deg(trajectory_joint_poses[i]), color="steelblue")
+                ax.set_ylabel(f"J{i+1} (°)")
+                ax.grid(True, linestyle="--", alpha=0.5)
+            axes[-1].set_xlabel("Time (s)")
+            fig.tight_layout()
+            fig.savefig(os.path.join(save_path, "joint_positions.png"), dpi=150)
+            plt.close(fig)
+
+            # Joint velocities
+            fig, axes = plt.subplots(
+                n_joints, 1, figsize=(10, 2 * n_joints), sharex=True
+            )
+            fig.suptitle("Joint Velocities over Time")
+            for i, ax in enumerate(axes):
+                ax.plot(t_mid, np.rad2deg(velocities[i]), color="darkorange")
+                ax.axhline(
+                    np.rad2deg(max_joint_velocities[i]),
+                    color="red",
+                    linestyle="--",
+                    linewidth=0.8,
+                    label="limit",
+                )
+                ax.axhline(
+                    -np.rad2deg(max_joint_velocities[i]),
+                    color="red",
+                    linestyle="--",
+                    linewidth=0.8,
+                )
+                ax.set_ylabel(f"J{i+1} (°/s)")
+                ax.grid(True, linestyle="--", alpha=0.5)
+            axes[-1].set_xlabel("Time (s)")
+            axes[0].legend(loc="upper right", fontsize=8)
+            fig.tight_layout()
+            fig.savefig(os.path.join(save_path, "joint_velocities.png"), dpi=150)
+            plt.close(fig)
 
     return is_valid, violations, max_recorded_velocity
 
@@ -209,6 +255,7 @@ def check_safety_constraints(
     checking_velocities=True,
     checking_collisions=True,
     save_path=None,
+    plot=True,
 ):
     """
     Check all safety constraints for a trajectory.
@@ -247,6 +294,7 @@ def check_safety_constraints(
             time_array,
             max_joint_velocities,
             save_path=save_path,
+            plot=plot,
         )
     else:
         is_valid_velocities = True

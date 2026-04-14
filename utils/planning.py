@@ -387,6 +387,7 @@ def compute_hemisphere_traj_async(
     speed_factor=1.0,
     max_joint_velocities=None,
     save_path=None,
+    plot=True,
 ):
     hemisphere_points, hemisphere_rots, hemisphere_t = generate_poses_along_hemisphere(
         center=hemisphere_pos,
@@ -440,6 +441,7 @@ def compute_hemisphere_traj_async(
         joint_upper_limits,
         max_joint_velocities,
         save_path=save_path,
+        plot=plot,
     )
 
     ik_result["valid_joints"] = len(violations["limits"]) == 0
