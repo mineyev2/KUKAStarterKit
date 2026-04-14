@@ -1,11 +1,23 @@
 # Installation
 
 (TODO: Make sure to install CUDA and toolkits first)
+(Make sure nvidia toolkit and CUDA are properly setup first)
 This repo was run for:
 CUDA 13.0
 PyTorch for 13.0
 
-(Make sure nvidia toolkit and CUDA are properly setup first)
+```
+sudo apt-get install -y \
+    nvidia-cuda-toolkit \
+    nvidia-cuda-toolkit-gcc
+```
+
+Make sure to install all submodules in repo first:
+```
+git submodule update --init --recursive
+```
+
+## Motion Planning Environment Setup
 
 This repo uses Poetry for dependency management. To set up this project, first install
 [Poetry](https://python-poetry.org/docs/#installation) and, make sure to have Python3.10
@@ -23,8 +35,61 @@ poetry install -vvv
 ```
 (the `-vvv` flag adds verbose output).
 
-### Reconstruction Environment Installation
+## Reconstruction Environment Installation
 Before creating the reconstruction environment, ensure you have built colmap (cloned via submodule) with CUDA 13 and specify the correct architecture: [Colmap Installation](https://colmap.github.io/install.html)
+
+```
+sudo apt-get install \
+    git \
+    cmake \
+    ninja-build \
+    build-essential \
+    libboost-program-options-dev \
+    libboost-graph-dev \
+    libboost-system-dev \
+    libeigen3-dev \
+    libopenimageio-dev \
+    openimageio-tools \
+    libmetis-dev \
+    libgoogle-glog-dev \
+    libgtest-dev \
+    libgmock-dev \
+    libsqlite3-dev \
+    libglew-dev \
+    qt6-base-dev \
+    libqt6opengl6-dev \
+    libqt6openglwidgets6 \
+    libcgal-dev \
+    libceres-dev \
+    libsuitesparse-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libmkl-full-dev
+# Fix issue in Ubuntu's openimageio CMake config.
+# We don't depend on any of openimageio's OpenCV functionality,
+# but it still requires the OpenCV include directory to exist.
+sudo mkdir -p /usr/include/opencv4
+```
+...
+
+If you have ubuntu 22.04, do this first:
+```
+sudo apt-get install gcc-10 g++-10
+export CC=/usr/bin/gcc-10
+export CXX=/usr/bin/g++-10
+export CUDAHOSTCXX=/usr/bin/g++-10
+```
+
+```
+cd colmap
+mkdir build
+cd build
+cmake .. -GNinja -DBLA_VENDOR=Intel10_64lp -DCMAKE_CUDA_ARCHITECTURES=120
+ninja
+sudo ninja install
+```
+
+No to "Use libmkl_rt.so as the default alternative to BLAS/LAPACK?" if asked
 
 Creating the Python Environment:
 ```bash
@@ -62,194 +127,122 @@ sudo apt update
 sudo apt install python3-tk
 ```
 
-### iiwa Driver
+## iiwa Driver
 
-[Drake's iiwa driver](https://github.com/RobotLocomotion/drake-iiwa-driver) must be
-installed manually to use the real iiwa robot. NOTE that
-[Drake's pre-requisites](https://drake.mit.edu/from_source.html) must be installed
-before installing the driver.
-
-The FRI source can be downloaded from
-[here](https://mitprod-my.sharepoint.com/:u:/g/personal/nepfaff_mit_edu/EdUdfStUexZKqlfwKLTKOyUBmpoI3H1ylzit-813TMV1Eg?e=HRWaIv)
-and installed using the following instructions (from the driver repo):
-```bash
-cd kuka-fri
-unzip /path/to/your/copy/of/FRI-Client-SDK_Cpp-1_7.zip
-patch -p1 < ../fri_udp_connection_file_descriptor.diff
-```
-
-Once build, the driver can be run using `./bazel-bin/kuka-driver/kuka_driver` or using
-`bazel run //kuka-driver:kuka_driver`.
-
-#### Networking troubleshooting
-
-If the driver doesn't connect to the kuka, check that the sunrise cabinet is reachable
-on the network using `nmap -sP 192.170.10.2/24`. Both the local computer and a second
-computer (the sunrise cabinet) should show up.
-
-If it doesn't show up, check the following:
-1. There must be an ethernet network connecting the local computer and the sunrise
-sunrise cabinet KONI port (ideally through a switch). This network must have the static
-IP `192.170.10.200` with netmask `255.255.255.0`.
-2. The sunrise cabinet KONI port must be owned by RTOS and not by Windows. Connect a
-monitor, mouse, and keyboard to the sunrise cabinet. Start the cabinet and login. Press
-`WIN+R` to open the command window. Type
-`C:\KUKA\Hardware\Manager\KUKAHardwareManager.exe -query OptionNIC -os RTOS`. Everything
-is in order if the popup says `BusType OptionNIC found`. If the popup says
-`BusTypeOptionNIC not present`, change the port ownership using
-`C:\KUKA\Hardware\Manager\KUKAHardwareManager.exe -assign OptionNIC -os RTOS`. Unplug
-the monitor and restart the sunrise cabinet before re-checking the network with `nmap`.
-
-#### Port troubleshooting
-
-Make sure that the sunrise cabinet port matches the kuka driver port. If not, then
-modify the kuka driver source code to change the port
-(`kuka-driver/kuka_driver.cc/kDefaultPort`). It is also possible to start the kuka
-driver with a specific port over the command line. However, it is easier to hardcode the
-port as the cabinet port won't change.
-
-#### Robot limit exceeded errors
-
-1. Enter the KRF mode
-2. Manually operate the robot out of the limits using the tablet
-3. Re-enter automatic mode
-
-If no KRF mode exists, then do the following:
-1. Unmaster the joint whose limits are exceeded
-2. Use the teach pendant in T1 mode to move the joint back inside its allowed range
-3. Master the joint
-
-#### "Voltage of intermediate circuit too low" error
-
-One of the fuses is blown. You need to open the control box and replace them.
-In most cases, it is sufficient to replace the 5A fuse.
-
-The two fuses are:
-- 5A/80V Automotive Fuse ([buying link](https://www.newark.com/multicomp-pro/mp008147/fuse-automotive-5a-80vdc-rohs/dp/69AJ0523))
-- 7.5A/80V Automotive Fuse ([buying link](https://www.newark.com/multicomp-pro/mp008148/fuse-automotive-7-5a-80vdc-rohs/dp/69AJ0524))
-
-### Schunk WSG 50 Gripper Driver (Optional)
-
-Connect the WSG gripper to the same switch that is connecting the local computer with
-the sunrise cabinet. Add the IP `192.168.1.200` with netmask `255.255.255.0` as an
-additional static IP to the network (the first IP should still be `192.170.10.200`).
-The WSG is connected properly if the `WSG 50 Control Panel` web interface can be
-accessed through http://192.168.1.20/. Try to control the gripper through the web
-interface. If this doesn't work, then controlling it through the driver also won't work.
-
-[Drake's Schunk driver](https://github.com/RobotLocomotion/drake-schunk-driver) must be
-installed manually to use the WSG programatically. Once built, the driver can be run
-using `bazel run //src:schunk_driver`. The driver requires Bazel 6. Multiple Bazel
-versions can be managed by installing `bazelisk` from [here](https://github.com/bazelbuild/bazelisk/releases).
-The Bazel version will then be read from the `.bazeliskrc` file in the repo.
-
-#### Cable
-
-The WSG requires a Male M8 4-Pin A Coding to RJ45 Connector.
-
-#### Networking troubeshooting
-
-Check that one host shows up when using `nmap -sP 192.168.1.201`. and that the website
-is accessible at http://192.168.1.20/. If not, then check that you followed the IP
-instructions and that the gripper's ethernet cable is plugged into the switch.
-
-#### Error while moving: The device is not initialized
-
-1. Navigate to the website http://192.168.1.20/
-2. Motion -> Manual Control
-3. Click on `Home` and wait until the homing sequence is finished
-4. Re-try commanding the gripper via the web interface
-
-#### Network error during movement
-
-This might be due to cable issues. Check for cable issues by opening the webpage and
-locating the "Link Active" blinking/ switching light indicator. The blue light
-continuously switches between the left and right circle while the gripper is connected.
-Pull/ twist one of the cables and see whether the light stops switching. If this is the
-case, then there is probably a cable error and the cable might need replacing.
-
-Note that the gripper takes a few minutes to reconnect after the connection ist lost.
-The connection is re-established once the webpage loads again.
-
-#### Getting system info failed
-
-Follow the [wsg driver setup instructions](https://github.com/RobotLocomotion/drake-schunk-driver?tab=readme-ov-file#configuring-the-gripper).
-In particular, the gripper might be set to ICP instead of UDP.
-
-#### Can't connect to the gripper/ nothing else works
-
-Reset the gripper's config on its MicroSD card:
-1. Power off the gripper
-2. Remove the MicroSD card (behind the black plate with two small screws on the gipper side)
-3. Insert it into your computer
-4. Navigate to the config folder
-5. Rename the file `config/system.cfg` to `config/system.old`
-6. Re-insert the MicroSD card into the gripper
-7. The gripper should now be discoverable on its default IP address
-
-### Optitrack Driver (Optional)
-
-[Drake's Optitrack driver](https://github.com/RobotLocomotion/optitrack-driver) must be
-installed manually to use the [Optitrack](https://optitrack.com/) functionality.
-
-Build and install the wheel as described
-[here](https://github.com/RobotLocomotion/optitrack-driver#to-build-a-wheel). Make sure
-to install the wheel from inside the poetry virtual environment.
-
-### FT 300-S Driver (Optional)
-
-The [FT 300-S LCM driver](https://github.com/nepfaff/ft-300s-driver) must be installed
-according to its README instructions.
-
-The included LCM messages must be added to the python path (after building):
-```
-export PYTHONPATH=~/path_to_parent_dir/ft_300s_driver/bazel-bin/lcmtypes/ft_300s/:${PYTHONPATH}
-```
-
-## Executing code on the real robot
-
-1. Start the `DrakeFRIPositionDriver` or `DrakeDRITorqueDriver` on the teach pendant.
-2. Run the iiwa driver by running `bazel run //kuka-driver:kuka_driver` from
-`drake-iiwa-driver`.
-3. If using the WSG, run the schunk driver using `bazel run //src:schunk_driver` from
-`drake-schunk-driver`.
-4. Run the desired script with the `--use_hardware` flag.
-
-### Note about timesteps
-The `torque_only` driver runs at 1000Hz while all other controllers run at 200Hz. The
-specified timesteps should match the controllers, i.e. 0.001 for the `torque_only`
-driver and 0.005 for all other drivers.
-
-### Controlling the robot in `torque_only` mode
-
-**NOTE:** It is recommended to calibrate the joint torque sensors before running the
-robot in `torque_only` mode. This can be achieved by running the
-`PositionAndGMSReferencing` application on the teach pendant.
-
-1. Start the `DrakeFRITorqueOnlyDriver` on the teach pendant.
-2. Optional: Make sure that the iiwa driver is build by running `bazel build //...` from
-`drake-iiwa-driver`.
-3. Run the iiwa driver by running
-`sudo ./bazel-bin/kuka-driver/kuka_driver --torque_only=true --time_step 0.001 --realtime`
-from `drake-iiwa-driver` (`sudo` is required for `--realtime` which helps but is not
-required).
-4. Run the desired script with the `--use_hardware` flag.
-
-Note that you might need to increase the conservative default torque limits in the driver
-code. See [here](https://github.com/nepfaff/drake-iiwa-driver/tree/increase_default_torque_limits)
-for how to do this. This is necessary if the motions appear very jerky and the driver
-terminates with "Robot is in an unsafe state".
-
-#### Obtaining slightly better performance
-
-You might be able to achieve slightly better performance in `torque_only` mode by
-pinning the processes to the same core and increasing their priority.
-
-1. Make sure that you can run `chrt` without sudo privileges:
-`sudo setcap cap_sys_nice=eip /usr/bin/chrt`. This is only required once.
-2. Run the desired script using `taskset -c 1,29 chrt -r 90 python {...} --use_hardware`.
+Refer to our lab's `#hardware_kuka_iiwa` channel for setup details.
 
 # Usage
+
+## Object Scanning (`robot_scan/scan_object.py`)
+
+Scans an object from hemisphere viewpoints. Pre-computes IK for all waypoints upfront, moves the robot along the hemisphere, and optionally descends along the optical axis at each waypoint to capture photos. If the hemisphere path for a waypoint is unsafe, RRT\*-Connect is used as a fallback automatically.
+
+Images are saved to `microscope-data/scans/<YYYYMMDD_HHMMSS>/` along with a `scan_params.txt` describing all run parameters.
+
+### Arguments
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--use_hardware` | no | off | Connect to the real iiwa robot instead of simulation |
+| `--no_cam` | no | off | Disable camera capture (no images saved) |
+| `--live_view` | no | off | Show live camera feed in a window while scanning |
+| `--skip_opt` | no | off | Skip the optical axis trajectory — robot visits waypoints only, no photos |
+| `--no_wait` | no | off | Execute every trajectory immediately without pressing "Execute Path" in Meshcat |
+| `--start_idx` | no | `0` | Waypoint index to start from (useful for resuming a scan) |
+| `--hemisphere_dist` | no | `0.8` | Distance from world origin to the hemisphere center in meters |
+| `--hemisphere_angle` | no | `0.0` | Approach angle in degrees — rotates the hemisphere center and axis in the XY plane |
+| `--hemisphere_radius` | no | `0.08` | Radius of the hemisphere scan surface in meters |
+| `--hemisphere_z` | no | `0.36` | Z height of the hemisphere center in the world frame (meters) |
+
+### Meshcat controls
+
+Once running, open the Meshcat URL printed to the terminal. The following buttons are available:
+
+| Button | Description |
+|---|---|
+| `Move to Scan` | Plan and execute the initial move to the first valid waypoint |
+| `Execute Path` | Confirm and execute the planned hemisphere or RRT\* trajectory (skipped with `--no_wait`) |
+| `Preview RRT* Raw` | Animate the raw RRT\* waypoints before committing (RRT\* fallback only) |
+| `Preview RRT* Smooth` | Animate the TOPPRA-smoothed RRT\* trajectory before committing |
+| `Stop Simulation` | Stop the scan loop cleanly |
+
+### Outputs
+
+| File | Description |
+|---|---|
+| `microscope-data/scans/<date>/scan_params.txt` | All run parameters |
+| `microscope-data/scans/<date>/scan<NN>/frame_NNNNN.jpg` | Captured images per waypoint |
+| `microscope-data/scans/<date>/scan<NN>/pose_NNNNN.npy` | Camera pose (4×4 matrix) at each captured frame |
+| `outputs/joint_log.csv` | Full joint position log for the session |
+| `outputs/hemisphere_q_solutions.csv` | Pre-computed joint configs for all waypoints |
+| `outputs/hemisphere_q_failed_indices.npy` | Indices of waypoints where IK failed |
+| `outputs/hemisphere_waypoints.png` | Plot of all generated hemisphere waypoints |
+
+### Examples
+
+**Simulation, step through each trajectory manually:**
+```bash
+python robot_scan/scan_object.py
+```
+
+**Hardware, run fully autonomously:**
+```bash
+python robot_scan/scan_object.py --use_hardware --no_wait
+```
+
+**Hardware, skip photos (motion only):**
+```bash
+python robot_scan/scan_object.py --use_hardware --skip_opt --no_wait
+```
+
+**Custom hemisphere geometry:**
+```bash
+python robot_scan/scan_object.py --hemisphere_radius 0.1 --hemisphere_z 0.4 --hemisphere_dist 0.7
+```
+
+**Resume from waypoint 10:**
+```bash
+python robot_scan/scan_object.py --start_idx 10 --no_wait
+```
+
+---
+
+## Camera Calibration (`microscope_scripts/camera_calibration.py`)
+
+Computes intrinsic camera parameters (matrix + distortion) from checkerboard images saved to disk and writes `camera_calib_intrinsic.npy` into the same folder as the input images.
+
+Intended as the second step after capturing images with `calibrate_microscope.py`.
+
+### Arguments
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--data_path` | yes | — | Path to folder containing checkerboard images (`.png` or `.jpg`) |
+| `--size` | yes | — | Physical size of each checkerboard square in mm (e.g. `25`) |
+| `--corners_h` | no | `8` | Number of internal corner intersections along the checkerboard height |
+| `--corners_w` | no | `5` | Number of internal corner intersections along the checkerboard width |
+
+> **Note on corners:** `--corners_h` and `--corners_w` are the number of *intersection points* (internal corners), not the number of squares. A board with 9×6 squares has **8×5** internal corners.
+
+### Examples
+
+**Calibrate from images captured by `calibrate_microscope.py`:**
+```bash
+cd microscope_scripts
+python3 camera_calibration.py --data_path ../microscope-data/calibration/20260413_120000 --size 25
+```
+
+**Non-default checkerboard** (e.g. a board with 7×6 internal corners, 20 mm squares):
+```bash
+cd microscope_scripts
+python3 camera_calibration.py --data_path /path/to/images --size 20 --corners_h 7 --corners_w 6
+```
+
+The script prints `[ok]` / `[miss]` for each image and reports the mean reprojection error in pixels when done. Lower is better — under 1.0 px is generally good.
+
+---
+
+## Reconstruction
 
 To run an example to test that everything works, you can download their sample dataset. First, navigate to the `reconstruction` folder.
 

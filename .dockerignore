@@ -1,0 +1,17 @@
+# Exclude virtual environments (huge, rebuilt inside container)
+reconstruction/.venv/
+.venv/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Build artifacts outside colmap submodule
+reconstruction/results/
+reconstruction/data/
+outputs/
+
+# IDE / OS
+.git/
+**/.DS_Store

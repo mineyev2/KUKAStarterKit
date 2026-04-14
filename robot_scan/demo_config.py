@@ -3,14 +3,14 @@ import numpy as np
 # Configuration for different modes
 HARDWARE_CONFIG = {
     "speed_factor": 1.0,
-    "max_joint_velocity_deg": 60.0,
+    "max_joint_velocity_deg": 30.0,
     "vel_limits": np.full(7, 0.5),  # rad/s
     "acc_limits": np.full(7, 0.5),  # rad/s^2
 }
 
 SIMULATION_CONFIG = {
-    "speed_factor": 5.0,
-    "max_joint_velocity_deg": 1000.0,
+    "speed_factor": 1.0,
+    "max_joint_velocity_deg": 30.0,
     "vel_limits": np.full(7, 0.5),  # rad/s
     "acc_limits": np.full(7, 0.5),  # rad/s^2
 }

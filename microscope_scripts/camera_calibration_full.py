@@ -11,33 +11,21 @@ import cv2 as cv
 import numpy as np
 
 
-def feed_Checkerboard_photos(img, checkersize):
-    # used by fetching_from_camera()
-    # used by fetching_from_file()
+def feed_Checkerboard_photos(img, checkersize, corners_h=8, corners_w=5):
+    """
+    Feeds checkerboard photos to the camera calibration process.
+    """
 
-    # with given checker board img and known checker board size, provide its point locations in world frame and image frame
-    # the capture boolean and accepted frames are returned as well
     gray = cv.cvtColor(img, cv.COLOR_BGR2GRAY)
     # checkerboard corner size
     # NOTE: This has to be the EXACT number of internal corners.
-    h = 9
-    w = 6
+    h = corners_h
+    w = corners_w
     objp = 0
     corners2 = 0
     checker_size = checkersize  # in mm
+
     # Find the chess board corners
-
-    # add gaussian blur to improve corner detection
-    # show img before and after
-    # cv.imshow('Checkerboard Detection - Before Blur', gray)
-    # blur_amt = 11
-    # gray = cv.GaussianBlur(gray, (blur_amt, blur_amt), 0)
-    # cv.imshow('Checkerboard Detection - After Blur', gray)
-    # return 0, 0, 0, img
-
-    # scale down image by half without aliasing
-    # gray = cv.resize(gray, (0,0), fx=0.25, fy=0.25, interpolation=cv.INTER_AREA)
-
     ret, corners = cv.findChessboardCorners(gray, (h, w), None)
     # If found, add object points, image points (after refining them)
     if ret == True:
@@ -57,7 +45,7 @@ def feed_Checkerboard_photos(img, checkersize):
     return ret, objp, corners2, img
 
 
-def fetching_from_camera(source, data_path, checkersize):
+def fetching_from_camera(source, data_path, checkersize, corners_h=8, corners_w=5):
     """
     Fetching the checkerboard images from the camera and provide its point locations in world frame and image frame
 
@@ -96,7 +84,7 @@ def fetching_from_camera(source, data_path, checkersize):
         processed_frame = frame.copy()
 
         found_checkerboard, objp, corners, img = feed_Checkerboard_photos(
-            processed_frame, checkersize
+            processed_frame, checkersize, corners_h, corners_w
         )
         cv.imshow('Press "s" to save this frame "q" to proceed', img)
 
@@ -127,7 +115,7 @@ def fetching_from_camera(source, data_path, checkersize):
     return objpoints, imgpoints, frame
 
 
-def fetching_from_file(im_path, checkersize):
+def fetching_from_file(im_path, checkersize, corners_h=8, corners_w=5):
     """
     Fetching the checkerboard images from the given path and provide its point locations in world frame and image frame
 
@@ -155,7 +143,7 @@ def fetching_from_file(im_path, checkersize):
         total_img = total_img + 1
         frame = cv.imread(im)
         found_checkerboard, objp, corners, _ = feed_Checkerboard_photos(
-            frame, checkersize
+            frame, checkersize, corners_h, corners_w
         )
         if found_checkerboard:
             num_valid_img = num_valid_img + 1
@@ -611,11 +599,25 @@ if __name__ == "__main__":
         action="store_true",
         help="Capture new images from camera (default: load from existing images)",
     )
+    parser.add_argument(
+        "--corners_h",
+        type=int,
+        default=8,
+        help="Number of internal corner intersections along the height of the checkerboard (default: 8)",
+    )
+    parser.add_argument(
+        "--corners_w",
+        type=int,
+        default=5,
+        help="Number of internal corner intersections along the width of the checkerboard (default: 5)",
+    )
 
     args = parser.parse_args()
 
     camera_source = args.source
     checkersize = args.size
+    corners_h = args.corners_h
+    corners_w = args.corners_w
     current_path = os.path.abspath(__file__)
     current_dir = os.path.dirname(current_path)
     data_path = os.path.join(
@@ -632,11 +634,13 @@ if __name__ == "__main__":
             f"Capturing images from camera {camera_source} with {checkersize}mm squares..."
         )
         objpoints, imgpoints, frame = fetching_from_camera(
-            camera_source, data_path, checkersize
+            camera_source, data_path, checkersize, corners_h, corners_w
         )
     else:
         print(f"Loading images from {data_path} with {checkersize}mm squares...")
-        objpoints, imgpoints, frame = fetching_from_file(data_path, checkersize)
+        objpoints, imgpoints, frame = fetching_from_file(
+            data_path, checkersize, corners_h, corners_w
+        )
     gray = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
 
     # obtain camera matrix, distorion factor

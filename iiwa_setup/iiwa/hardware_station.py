@@ -231,17 +231,16 @@ class InternalStationDiagram(Diagram):
         add_wall(self._plant)
 
         hemisphere_wall_rot = RotationMatrix.MakeZRotation(self.hemisphere_angle)
-        wall_pos = [self.hemisphere_pos[0], self.hemisphere_pos[1], 0.75]
+        wall_pos = [
+            self.hemisphere_pos[0] + 0.05,
+            self.hemisphere_pos[1],
+            self.hemisphere_pos[2],
+        ]
+        wall_width = 0.075
         add_wall(
             self._plant,
-            wall_width=0.05,
-            X_WF=RigidTransform(
-                hemisphere_wall_rot,
-                wall_pos
-                + np.array(
-                    [0.05, 0.005, 0.0]
-                ),  # TODO: Check 0.1 is protrusion of mount Advaith makes
-            ),
+            wall_width=wall_width,
+            X_WF=RigidTransform(hemisphere_wall_rot, wall_pos),
         )
 
         add_sphere(  # scanning sphere for visualization
@@ -254,12 +253,12 @@ class InternalStationDiagram(Diagram):
         )
 
         # add sphere to visualize collisions
-        obj_radius = 0.06  # space to give microscope tip to avoid collision
+        # obj_radius = 0.01  # space to give microscope tip to avoid collision
         add_sphere(
             self._plant,
             name="collision_sphere",
             position=self.hemisphere_pos,
-            radius=obj_radius,
+            radius=self.hemisphere_radius - 0.01,
             color=[1.0, 1.0, 1.0, 1.0],
             collision=False,
         )
@@ -330,12 +329,17 @@ class InternalStationDiagram(Diagram):
         # Add other world geometry (e.g., floor, wall, etc.)
         add_floor(self._optimization_plant)
         add_wall(self._optimization_plant)
+        # add_wall(
+        #     self._optimization_plant,
+        #     wall_width=0.1,
+        #     X_WF=RigidTransform(
+        #         hemisphere_wall_rot, self.hemisphere_pos + np.array([0.0, 0.005, 0.0])
+        #     ),
+        # )
         add_wall(
             self._optimization_plant,
-            wall_width=0.1,
-            X_WF=RigidTransform(
-                hemisphere_wall_rot, self.hemisphere_pos + np.array([0.0, 0.005, 0.0])
-            ),
+            wall_width=wall_width,
+            X_WF=RigidTransform(hemisphere_wall_rot, wall_pos),
         )
 
         # Add sphere to visualize scan points
@@ -352,7 +356,7 @@ class InternalStationDiagram(Diagram):
             self._optimization_plant,
             name="collision_sphere",
             position=self.hemisphere_pos,
-            radius=obj_radius,
+            radius=self.hemisphere_radius - 0.01,
             collision=True,
         )
 

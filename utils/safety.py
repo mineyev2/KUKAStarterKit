@@ -56,7 +56,10 @@ def check_joint_limits(trajectory_joint_poses, joint_lower_limits, joint_upper_l
 
 
 def check_joint_velocities(
-    trajectory_joint_poses, t, max_joint_velocities=np.deg2rad(60 * np.ones(7))
+    trajectory_joint_poses,
+    t,
+    max_joint_velocities=np.deg2rad(60 * np.ones(7)),
+    save_path=None,
 ):  # Example limits in rad/s
     """
     Check if joint velocities in a trajectory exceed specified limits.
@@ -65,6 +68,8 @@ def check_joint_velocities(
         trajectory_joint_poses: (7, N) array of joint positions, in radians
         t: (N,) array of time values
         max_joint_velocities: (7,) array of maximum allowed joint velocities (absolute value)
+        save_path: optional Path/str — if provided, saves joint_positions.csv and
+                   joint_velocities.csv into that directory
 
     Returns:
         is_valid: bool, True if all velocities are within limits
@@ -116,6 +121,34 @@ def check_joint_velocities(
             )
         if len(violations) > 5:
             print(colored(f"  ... and {len(violations) - 5} more violations", "yellow"))
+
+    if save_path is not None:
+        import os
+
+        os.makedirs(save_path, exist_ok=True)
+        # Joint positions: rows = timesteps, cols = joints
+        pos_header = "time," + ",".join(
+            [f"q{i}" for i in range(trajectory_joint_poses.shape[0])]
+        )
+        np.savetxt(
+            os.path.join(save_path, "joint_positions.csv"),
+            np.vstack((t, trajectory_joint_poses)).T,
+            delimiter=",",
+            header=pos_header,
+            comments="",
+        )
+        # Joint velocities: rows = segments, cols = joints (one fewer row than positions)
+        t_mid = 0.5 * (t[:-1] + t[1:])
+        vel_header = "time_mid," + ",".join(
+            [f"dq{i}" for i in range(velocities.shape[0])]
+        )
+        np.savetxt(
+            os.path.join(save_path, "joint_velocities.csv"),
+            np.vstack((t_mid, velocities)).T,
+            delimiter=",",
+            header=vel_header,
+            comments="",
+        )
 
     return is_valid, violations, max_recorded_velocity
 
@@ -175,6 +208,7 @@ def check_safety_constraints(
     checking_joints=True,
     checking_velocities=True,
     checking_collisions=True,
+    save_path=None,
 ):
     """
     Check all safety constraints for a trajectory.
@@ -209,7 +243,10 @@ def check_safety_constraints(
             violations_velocities,
             max_recorded_velocity,
         ) = check_joint_velocities(
-            trajectory_joint_poses, time_array, max_joint_velocities
+            trajectory_joint_poses,
+            time_array,
+            max_joint_velocities,
+            save_path=save_path,
         )
     else:
         is_valid_velocities = True
