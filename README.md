@@ -142,6 +142,23 @@ python demos/joint_state_monitor.py
 python demos/joint_state_monitor.py --use_hardware
 ```
 
+### `demos/torque_teleop.py`
+
+Direct torque control sanity check. Uses `control_mode: torque_only` so
+the `iiwa.torque` input port is exposed instead of `iiwa.position`. Seven
+Meshcat sliders let you add per-joint torque offsets (±5 Nm) and watch the
+arm respond in real time via the same terminal readout as
+`joint_state_monitor.py`.
+
+At zero slider offsets the arm floats — Drake's simulated `IiwaDriver`
+replicates the KUKA's internal gravity compensation, so no explicit
+compensation is needed in either simulation or hardware.
+
+```bash
+python demos/torque_teleop.py
+python demos/torque_teleop.py --use_hardware
+```
+
 ### `demos/rrt_star_planner.py`
 
 Plans an RRT\*-Connect trajectory between two hard-coded joint
