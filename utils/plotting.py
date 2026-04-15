@@ -1,3 +1,11 @@
+"""
+utils/plotting.py
+
+Matplotlib helpers for visualizing hemisphere waypoints and trajectories.
+
+Author: Roman Mineyev
+"""
+
 import matplotlib
 import numpy as np
 

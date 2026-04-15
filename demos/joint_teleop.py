@@ -15,6 +15,8 @@ WARNING: On hardware the robot tracks slider commands directly with no
 trajectory smoothing or velocity limiting. Moving a slider quickly can
 cause the robot to accelerate very fast and trigger a fault. Make small,
 slow adjustments when running on the real iiwa.
+
+Author: Roman Mineyev
 """
 
 import argparse

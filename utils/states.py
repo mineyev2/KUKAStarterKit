@@ -1,3 +1,11 @@
+"""
+utils/states.py
+
+Shared State enum used across demo state machines.
+
+Author: Roman Mineyev
+"""
+
 from enum import Enum, auto
 
 

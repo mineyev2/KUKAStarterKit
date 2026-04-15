@@ -1,8 +1,10 @@
 """
 SEW Stereo Kinematics Class
 
-Python equivalent of the MATLAB sew_stereo class for spherical-elbow-wrist 
+Python equivalent of the MATLAB sew_stereo class for spherical-elbow-wrist
 stereo kinematics calculations.
+
+Author: Roman Mineyev
 """
 
 from typing import Tuple, Union

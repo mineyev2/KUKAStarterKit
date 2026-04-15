@@ -1,3 +1,11 @@
+"""
+demos/demo_config.py
+
+Speed and limit profiles for simulation and hardware modes.
+
+Author: Roman Mineyev
+"""
+
 import numpy as np
 
 # Configuration for different modes

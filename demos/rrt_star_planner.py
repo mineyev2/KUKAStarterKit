@@ -13,6 +13,8 @@ Buttons:
 Usage:
     python demos/rrt_star_planner.py
     python demos/rrt_star_planner.py --use_hardware
+
+Author: Roman Mineyev
 """
 
 import argparse

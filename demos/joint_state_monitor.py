@@ -17,6 +17,8 @@ Usage:
 
 WARNING: On hardware the robot tracks slider commands directly with no
 trajectory smoothing or velocity limiting. Move sliders slowly.
+
+Author: Roman Mineyev
 """
 
 import argparse

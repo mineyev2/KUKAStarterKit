@@ -4,6 +4,8 @@ RRT*-Connect motion planner for the iiwa arm in joint space.
 Extends RRT-Connect with path-cost optimization: each new node selects the
 best parent among nearby nodes (minimum cost from root) and rewires nearby
 nodes through the new node if it lowers their cost.
+
+Author: Roman Mineyev
 """
 
 import time

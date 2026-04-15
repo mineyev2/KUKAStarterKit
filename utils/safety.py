@@ -1,3 +1,11 @@
+"""
+utils/safety.py
+
+Safety checks for joint limits, velocities, collisions, and IK filtering.
+
+Author: Roman Mineyev
+"""
+
 import matplotlib
 
 matplotlib.use("Agg")

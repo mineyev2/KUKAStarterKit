@@ -1,3 +1,13 @@
+"""
+utils/planning.py
+
+Trajectory planning utilities: hemisphere waypoint generation, trajectory
+visualization, GCS and kinematic trajectory optimization, and helpers for
+executing trajectories in the simulation loop.
+
+Author: Roman Mineyev
+"""
+
 import os
 import time
 

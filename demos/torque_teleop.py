@@ -22,6 +22,8 @@ and hardware. No explicit gravity compensation is needed here.
 Usage:
     python demos/torque_teleop.py              # simulation
     python demos/torque_teleop.py --use_hardware  # real robot
+
+Author: Roman Mineyev
 """
 
 import argparse

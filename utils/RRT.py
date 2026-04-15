@@ -2,6 +2,8 @@
 RRTConnect motion planner for the iiwa arm in joint space.
 
 Uses the station's optimization plant for collision detection.
+
+Author: Roman Mineyev
 """
 
 import time
