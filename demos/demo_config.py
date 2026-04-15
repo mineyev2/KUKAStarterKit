@@ -9,10 +9,10 @@ HARDWARE_CONFIG = {
 }
 
 SIMULATION_CONFIG = {
-    "speed_factor": 1.0,
-    "max_joint_velocity_deg": 30.0,
-    "vel_limits": np.full(7, 0.5),  # rad/s
-    "acc_limits": np.full(7, 0.5),  # rad/s^2
+    "speed_factor": 5.0,
+    "max_joint_velocity_deg": 150.0,
+    "vel_limits": np.full(7, 1.0),  # rad/s
+    "acc_limits": np.full(7, 1.0),  # rad/s^2
 }
 
 

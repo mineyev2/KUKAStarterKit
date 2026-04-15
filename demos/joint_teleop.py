@@ -1,3 +1,24 @@
+"""
+demos/joint_teleop.py
+
+Interactive joint-space teleoperation via Meshcat sliders.
+
+Each of the 7 iiwa joints has a slider in Meshcat. Moving a slider
+immediately commands the robot to that joint position. Press 'Stop'
+in Meshcat to exit.
+
+Usage:
+    python demos/joint_teleop.py              # simulation only
+    python demos/joint_teleop.py --use_hardware  # real robot
+
+WARNING: On hardware the robot tracks slider commands directly with no
+trajectory smoothing or velocity limiting. Moving a slider quickly can
+cause the robot to accelerate very fast and trigger a fault. Make small,
+slow adjustments when running on the real iiwa.
+"""
+
+import argparse
+
 import numpy as np
 
 from manipulation.station import LoadScenario
@@ -12,7 +33,7 @@ from pydrake.all import (
 from iiwa_setup.iiwa import IiwaHardwareStationDiagram
 
 
-def main() -> None:
+def main(use_hardware: bool = False) -> None:
     scenario_data = """
     directives:
     - add_directives:
@@ -37,26 +58,13 @@ def main() -> None:
         "station",
         IiwaHardwareStationDiagram(
             scenario=scenario,
-            hemisphere_dist=0.8,
-            hemisphere_angle=np.deg2rad(60),
-            hemisphere_radius=0.08,
-            use_hardware=False,
+            use_hardware=use_hardware,
         ),
     )
 
     # default_position = np.deg2rad([88.65, 45.67, -26.69, -119.89, 9.39, -69.57, 15.66])
 
-    default_position = np.array(
-        [
-            1.3648979733,
-            1.7947597195,
-            0.0000000000,
-            0.0000000000,
-            -1.9687825940,
-            1.7235560643,
-            1.7491270903,
-        ]
-    )
+    default_position = np.deg2rad([-32.06, 56.57, 47.46, -115.28, -0.89, -70.31, -37.64])
 
     controller_plant = station.get_iiwa_controller_plant()
     teleop = builder.AddSystem(
@@ -84,4 +92,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Joint-space teleoperation via Meshcat sliders")
+    parser.add_argument(
+        "--use_hardware",
+        action="store_true",
+        default=False,
+        help="Connect to real iiwa hardware via LCM",
+    )
+    args = parser.parse_args()
+    main(use_hardware=args.use_hardware)

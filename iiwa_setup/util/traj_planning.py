@@ -212,16 +212,18 @@ def setup_trajectory_optimization_from_q1_to_q2(
     prog.AddQuadraticErrorCost(np.eye(num_q), q2, trajopt.control_points()[:, -1])
 
     # ============= Initial guess =============
+    _q_safe = q_safe if q_safe is not None else 0.5 * (q1 + q2)
+
     guess_qs = []
     for i in range(num_control_points):
         s = i / (num_control_points - 1)
 
         if s <= 0.5:
             phase_s = s / 0.5
-            guess_q = q1 + phase_s * (q_safe - q1)
+            guess_q = q1 + phase_s * (_q_safe - q1)
         else:
             phase_s = (s - 0.5) / 0.5
-            guess_q = q_safe + phase_s * (q2 - q_safe)
+            guess_q = _q_safe + phase_s * (q2 - _q_safe)
 
         prog.SetInitialGuess(trajopt.control_points()[:, i], guess_q)
 
@@ -231,10 +233,10 @@ def setup_trajectory_optimization_from_q1_to_q2(
 
         if s <= 0.5:
             phase_s = s / 0.5
-            guess_q = q1 + phase_s * (q_safe - q1)
+            guess_q = q1 + phase_s * (_q_safe - q1)
         else:
             phase_s = (s - 0.5) / 0.5
-            guess_q = q_safe + phase_s * (q2 - q_safe)
+            guess_q = _q_safe + phase_s * (q2 - _q_safe)
 
         guess_qs.append(guess_q)
 
